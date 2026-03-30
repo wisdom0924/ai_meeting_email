@@ -63,7 +63,12 @@ export default function Home() {
         };
 
         mediaRecorder.onstop = async () => {
-          const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+          // 아이폰(Safari) 등 기기마다 지원하는 오디오 형식이 달라서(mp4, webm 등), 
+          // 기기가 실제로 녹음한 형식(mimeType)을 확인해서 사용합니다.
+          const mimeType = mediaRecorder.mimeType || 'audio/webm';
+          const fileExtension = mimeType.includes('mp4') ? 'mp4' : 'webm';
+          
+          const audioBlob = new Blob(audioChunksRef.current, { type: mimeType });
           const audioUrl = URL.createObjectURL(audioBlob);
           
           const now = new Date();
@@ -84,7 +89,7 @@ export default function Home() {
             setTranscript("AI가 녹음된 목소리를 열심히 듣고 글자로 바꾸고 있어요! (약 10~30초 소요)");
 
             const formData = new FormData();
-            formData.append("audio", audioBlob, "recording.webm");
+            formData.append("audio", audioBlob, `recording.${fileExtension}`);
 
             const response = await fetch('/api/assemblyai/transcribe', {
               method: 'POST',
@@ -279,7 +284,7 @@ export default function Home() {
                 }`}
               >
                 <span className="text-xl md:text-sm">{isRecording ? "⏹️" : "🔴"}</span> 
-                {isRecording ? "녹음 중지" : "녹음 시작"}
+                {isRecording ? "녹음 중지" : "녹음 시작ㅋ"}
               </button>
             </div>
           </div>
