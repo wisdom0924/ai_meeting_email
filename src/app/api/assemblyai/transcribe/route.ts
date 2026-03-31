@@ -30,7 +30,7 @@ export async function POST(request: Request) {
     const transcript = await client.transcripts.transcribe({
       audio: buffer,
       language_code: "ko", // 한국어로 인식해달라고 꼭 집어서 말해줍니다.
-      speech_model: "nano", // 빠르고 가벼운 모델을 사용합니다 (한국어 지원)
+      speech_models: ["universal-3-pro", "universal-2"], // 음성 인식 모델 (정확도가 높은 순서대로)
     });
 
     console.log("변환 완료!");

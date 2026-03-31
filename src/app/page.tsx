@@ -284,7 +284,7 @@ export default function Home() {
                 }`}
               >
                 <span className="text-xl md:text-sm">{isRecording ? "⏹️" : "🔴"}</span> 
-                {isRecording ? "녹음 중지" : "녹음 시작ㅋ"}
+                {isRecording ? "녹음 중지" : "녹음 시작"}
               </button>
             </div>
           </div>
