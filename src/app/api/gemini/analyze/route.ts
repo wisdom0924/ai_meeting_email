@@ -1,9 +1,7 @@
 import { NextResponse } from 'next/server';
-import OpenAI from 'openai';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY || '',
-});
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
 
 export async function POST(request: Request) {
   try {
@@ -16,9 +14,9 @@ export async function POST(request: Request) {
       );
     }
 
-    if (!process.env.OPENAI_API_KEY) {
+    if (!process.env.GEMINI_API_KEY) {
       return NextResponse.json(
-        { error: 'OpenAI API 키가 설정되지 않았습니다. .env 파일에 OPENAI_API_KEY를 추가해주세요.' },
+        { error: 'Gemini API 키가 설정되지 않았습니다. .env 파일에 GEMINI_API_KEY를 추가해주세요.' },
         { status: 500 }
       );
     }
@@ -50,7 +48,7 @@ export async function POST(request: Request) {
   "additionalNotes": "기타 추가 논의 사항"
 }
 
-반드시 아래와 같은 형태의 유효한 JSON 문자열 하나만 응답으로 반환해야 합니다. 다른 말은 절대 추가하지 마세요.
+반드시 위 구조를 갖는 JSON 형식으로만 응답해주세요.
 {
   "summary": "요약 내용...",
   "details": {
@@ -61,22 +59,23 @@ export async function POST(request: Request) {
 회의 텍스트:
 ${text}`;
 
-    const completion = await openai.chat.completions.create({
-      model: "gpt-4o-mini", // 비용 효율적이고 빠른 모델
-      messages: [
-        { role: "system", content: "당신은 전문적이고 꼼꼼한 AI 회의록 작성 마법사입니다. 응답은 반드시 JSON 형식으로만 출력해야 합니다." },
-        { role: "user", content: prompt }
-      ],
-      response_format: { type: "json_object" }
+    // Gemini 2.5 Flash 모델 사용 (빠르고 비용 효율적)
+    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+
+    const result = await model.generateContent({
+      contents: [{ role: "user", parts: [{ text: prompt }] }],
+      generationConfig: {
+        responseMimeType: "application/json",
+      }
     });
 
-    const resultString = completion.choices[0].message.content || '{}';
-    const resultJson = JSON.parse(resultString);
+    const responseText = result.response.text();
+    const resultJson = JSON.parse(responseText);
 
     return NextResponse.json(resultJson);
 
   } catch (error) {
-    console.error('OpenAI 요약 에러:', error);
+    console.error('Gemini 요약 에러:', error);
     return NextResponse.json(
       { error: '회의록을 분석하고 요약하는 중 문제가 발생했습니다.' },
       { status: 500 }

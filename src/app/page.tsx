@@ -135,8 +135,8 @@ export default function Home() {
             setFullTranscript((prev) => [...prev, ...newBlocks]);
             setTranscript("회의 내용을 바탕으로 요약본과 상세 회의록을 만들고 있어요! (약 10초 소요)");
 
-            // 2. 텍스트를 바탕으로 요약 및 상세 정보 생성 (OpenAI)
-            const analyzeResponse = await fetch('/api/openai/analyze', {
+            // 2. 텍스트를 바탕으로 요약 및 상세 정보 생성 (Gemini API)
+            const analyzeResponse = await fetch('/api/gemini/analyze', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ text: data.text })
