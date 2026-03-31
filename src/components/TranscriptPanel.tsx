@@ -1,3 +1,6 @@
+"use client";
+
+import { useState } from "react";
 import { TranscriptBlock } from "@/types";
 
 interface TranscriptPanelProps {
@@ -5,19 +8,25 @@ interface TranscriptPanelProps {
   isTranscribing: boolean;
   transcript: string;
   fullTranscript: TranscriptBlock[];
+  summary?: string;
+  details?: any;
 }
 
 export default function TranscriptPanel({
   isRecording,
   isTranscribing,
   transcript,
-  fullTranscript
+  fullTranscript,
+  summary,
+  details
 }: TranscriptPanelProps) {
+  const [activeTab, setActiveTab] = useState<'summary' | 'details'>('summary');
+
   return (
     <section className="w-full md:flex-1 min-h-[60vh] md:min-h-0 flex flex-col bg-white">
       <div className="flex-1 p-6 md:p-8 border-b border-gray-200 overflow-y-auto">
         <h2 className="text-2xl font-bold mb-6 flex items-center gap-2">
-          <span>✨</span> AI 회의록
+          <span>✨</span>AI 회의록
         </h2>
         
         {/* 글자가 나타나는 곳! */}
@@ -54,12 +63,107 @@ export default function TranscriptPanel({
         </div>
       </div>
       
-      <div className="h-auto md:h-1/3 p-6 md:p-8 bg-gray-50 flex-none">
-        <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
-          <span>💡</span> 핵심 요약
-        </h2>
-        <div className="text-gray-500 italic flex h-32 md:h-full items-center justify-center">
-          회의가 끝나면 AI가 핵심 내용을 이곳에 요약해 줍니다...
+      <div className="h-auto md:h-1/3 p-6 md:p-8 bg-gray-50 flex-none flex flex-col">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-xl font-bold flex items-center gap-2">
+            <span>💡</span> 핵심 요약
+          </h2>
+          <div className="flex bg-gray-200 rounded-lg p-1">
+            <button
+              onClick={() => setActiveTab('summary')}
+              className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                activeTab === 'summary' 
+                  ? 'bg-white text-gray-900 shadow-sm' 
+                  : 'text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              요약
+            </button>
+            <button
+              onClick={() => setActiveTab('details')}
+              className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                activeTab === 'details' 
+                  ? 'bg-white text-gray-900 shadow-sm' 
+                  : 'text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              상세보기
+            </button>
+          </div>
+        </div>
+        
+        <div className="flex-1 overflow-y-auto bg-white rounded-xl border border-gray-100 p-4">
+          {activeTab === 'summary' ? (
+            summary ? (
+              <div 
+                className="text-gray-700 whitespace-pre-wrap leading-relaxed outline-none hover:bg-gray-50 focus:bg-gray-50 transition-colors p-2 rounded cursor-text"
+                contentEditable={true}
+                suppressContentEditableWarning={true}
+              >
+                {summary}
+              </div>
+            ) : (
+              <div className="text-gray-500 italic flex h-32 md:h-full items-center justify-center">
+                회의가 끝나면 AI가 핵심 내용을 이곳에 요약해 줍니다...
+              </div>
+            )
+          ) : (
+            details ? (
+              <div 
+                className="p-6 md:p-8 rounded-lg text-gray-900 font-sans text-sm md:text-base leading-relaxed h-full overflow-y-auto outline-none hover:bg-gray-50 focus:bg-gray-50 transition-colors cursor-text"
+                contentEditable={true}
+                suppressContentEditableWarning={true}
+              >
+                <div className="text-xs text-gray-400 mb-6 flex items-center gap-1 cursor-default select-none" contentEditable={false}>
+                  <span>✏️</span> 텍스트를 마우스로 클릭하면 내용을 자유롭게 수정할 수 있습니다.
+                </div>
+                <h3 className="text-2xl md:text-3xl font-bold mb-6 tracking-tight">{details.title}</h3>
+                
+                <div className="mb-8 space-y-1">
+                  {Object.entries(details.meta).map(([key, value]) => (
+                    <div key={key}>
+                      {key} : {value as React.ReactNode}
+                    </div>
+                  ))}
+                </div>
+
+                <div className="space-y-8 mb-8">
+                  {details.agendas.map((agenda: any, idx: number) => (
+                    <div key={idx}>
+                      <div className="mb-2">{agenda.title}</div>
+                      <div className="flex mb-2">
+                        <span className="mr-2 whitespace-nowrap">논의 내용 :</span>
+                        <div>
+                          {agenda.discussions.map((d: string, i: number) => (
+                            <div key={i}>{d}</div>
+                          ))}
+                        </div>
+                      </div>
+                  <div className="mb-2 whitespace-pre-line">
+                    결정 사항 : {agenda.decisions}
+                  </div>
+                      <div>
+                        액션 아이템 : {agenda.actions}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="space-y-1">
+                  <div>
+                    다음 회의 일정 : {details.nextMeeting}
+                  </div>
+                  <div>
+                    추가 논의 사항 : {details.additionalNotes}
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="text-gray-500 italic flex h-32 md:h-full items-center justify-center">
+                회의의 상세한 분석 내용이 이곳에 표시됩니다...
+              </div>
+            )
+          )}
         </div>
       </div>
     </section>

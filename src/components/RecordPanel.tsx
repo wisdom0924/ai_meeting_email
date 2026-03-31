@@ -9,6 +9,7 @@ interface RecordPanelProps {
   onToggleRecord: () => void;
   memos: Memo[];
   onAddMemo: (text: string) => void;
+  audioLevel?: number; // 소리 크기를 받아오는 속성 추가
 }
 
 export default function RecordPanel({
@@ -16,7 +17,8 @@ export default function RecordPanel({
   recordingTime,
   onToggleRecord,
   memos,
-  onAddMemo
+  onAddMemo,
+  audioLevel = 0
 }: RecordPanelProps) {
   // 사용자가 입력창에 쓰고 있는 글자를 저장하는 공간입니다.
   const [inputText, setInputText] = useState("");
@@ -49,19 +51,29 @@ export default function RecordPanel({
       <div className="p-4 md:p-6 border-b border-gray-200 flex flex-col items-center justify-center gap-4 bg-white">
         <div className="text-5xl md:text-4xl font-mono font-medium text-gray-800 flex items-center gap-4">
           {isRecording && (
-            <div className="flex items-center gap-1 h-8 md:h-8 h-10">
-              <div className="w-1.5 h-4 bg-red-500 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
-              <div className="w-1.5 h-8 bg-red-500 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
-              <div className="w-1.5 h-5 bg-red-500 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
-              <div className="w-1.5 h-7 bg-red-500 rounded-full animate-bounce" style={{ animationDelay: '450ms' }}></div>
-              <div className="w-1.5 h-3 bg-red-500 rounded-full animate-bounce" style={{ animationDelay: '600ms' }}></div>
+            <div className="flex items-center gap-1 h-10">
+              {[
+                { delay: '0ms', baseH: 'h-4' },
+                { delay: '150ms', baseH: 'h-8' },
+                { delay: '300ms', baseH: 'h-5' },
+                { delay: '450ms', baseH: 'h-7' },
+                { delay: '600ms', baseH: 'h-3' },
+              ].map((bar, i) => (
+                <div 
+                  key={i}
+                  className={`w-1.5 bg-red-500 rounded-full transition-all duration-300 ${
+                    audioLevel > 5 ? `animate-bounce ${bar.baseH}` : 'h-1.5'
+                  }`} 
+                  style={{ animationDelay: bar.delay }}
+                ></div>
+              ))}
             </div>
           )}
           <span className={isRecording ? "text-red-500" : ""}>
             {formatTime(recordingTime)}
           </span>
         </div>
-        <div className="flex gap-4 w-full px-4 md:px-0">
+        <div className="flex gap-4 w-full px-4 md:px-0 justify-center">
           <button 
             onClick={onToggleRecord}
             className={`flex-1 md:flex-none flex items-center justify-center gap-2 px-4 py-4 md:px-6 md:py-3 rounded-full font-bold shadow-sm transition-colors text-lg md:text-base ${
@@ -125,7 +137,7 @@ export default function RecordPanel({
             className="p-2 bg-primary hover:bg-primary/90 text-white rounded-lg shadow-sm transition-colors flex-shrink-0 h-10 w-10 flex items-center justify-center disabled:opacity-50"
             disabled={inputText.trim() === ""}
           >
-            <span className="text-lg">⬆️</span>
+            <span className="text-lg">⬆</span>
           </button>
         </div>
       </div>
