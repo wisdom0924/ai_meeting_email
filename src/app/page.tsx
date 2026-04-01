@@ -136,10 +136,17 @@ export default function Home() {
             setTranscript("회의 내용을 바탕으로 요약본과 상세 회의록을 만들고 있어요! (약 10초 소요)");
 
             // 2. 텍스트를 바탕으로 요약 및 상세 정보 생성 (Gemini API)
+            const summaryPrompt = localStorage.getItem("summaryPrompt");
+            const detailsPrompt = localStorage.getItem("detailsPrompt");
+
             const analyzeResponse = await fetch('/api/gemini/analyze', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ text: data.text })
+              body: JSON.stringify({ 
+                text: data.text,
+                summaryPrompt,
+                detailsPrompt
+              })
             });
 
             const analyzeData = await analyzeResponse.json();
