@@ -42,7 +42,7 @@ export default function RecordPanel({
   };
 
   return (
-    <section className="w-full md:w-1/3 min-h-[60vh] md:min-h-0 border-b md:border-b-0 md:border-r border-gray-100 flex flex-col bg-white">
+    <section className="h-full flex flex-col bg-white">
       
       {/* 녹음 컨트롤러 부분 */}
       <div className="p-8 border-b border-gray-100 flex flex-col items-center justify-center gap-6">

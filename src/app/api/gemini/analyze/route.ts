@@ -5,7 +5,7 @@ const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
 
 export async function POST(request: Request) {
   try {
-    const { text, summaryPrompt, detailsPrompt } = await request.json();
+    const { text, memos, summaryPrompt, detailsPrompt } = await request.json();
 
     if (!text) {
       return NextResponse.json(
@@ -26,8 +26,8 @@ export async function POST(request: Request) {
 
     const prompt = `당신은 회의의 내용을 정확하게 요약하는 전문가입니다.
 
-다음은 회의의 전체 녹음 내용(텍스트)입니다. 
-이 내용을 바탕으로 두 가지 형식의 데이터를 작성해주세요.
+다음은 회의의 전체 녹음 내용(텍스트)과 사용자가 회의 중 작성한 메모입니다. 
+이 내용을 바탕으로 데이터를 작성해주세요. 메모 내용도 회의록과 요약에 자연스럽게 반영해주세요.
 
 1. "summary": ${finalSummaryPrompt}
 2. "details": 다음 지시사항에 맞게 상세 내용을 작성해주세요. 지시사항: ${finalDetailsPrompt}
@@ -53,13 +53,17 @@ export async function POST(request: Request) {
         "actions": "액션 아이템 (담당자 및 기한)"
       }
     ],
+    "memoSummary": "사용자가 작성한 메모들을 바탕으로 요약한 내용 (메모가 없다면 빈 문자열)",
     "nextMeeting": "다음 회의 일정",
     "additionalNotes": "기타 추가 논의 사항"
   }
 }
 
 회의 텍스트:
-${text}`;
+${text}
+
+사용자 작성 메모:
+${memos ? memos : '작성된 메모가 없습니다.'}`;
 
     // Gemini 2.5 Flash 모델 사용 (빠르고 비용 효율적)
     const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });

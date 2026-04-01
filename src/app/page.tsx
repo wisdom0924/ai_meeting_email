@@ -7,8 +7,11 @@ import RecordPanel from "@/components/RecordPanel";
 import TranscriptPanel from "@/components/TranscriptPanel";
 
 export default function Home() {
-  // 메모 목록을 저장하는 공간입니다. 처음에는 비어있습니다.
   const [memos, setMemos] = useState<Memo[]>([]);
+  const memosRef = useRef<Memo[]>([]);
+  useEffect(() => {
+    memosRef.current = memos;
+  }, [memos]);
 
   // 녹음 중인지 아닌지(상태)와 몇 초가 지났는지(진행 시간) 기억하는 공간이에요.
   const [isRecording, setIsRecording] = useState(false);
@@ -20,6 +23,7 @@ export default function Home() {
   const [isTranscribing, setIsTranscribing] = useState(false); // AI가 글자로 바꾸고 있는지 확인하는 마크
   const [summary, setSummary] = useState(""); // 500자 요약 데이터 상태 저장공간 추가
   const [details, setDetails] = useState<any>(null); // 상세 회의록 데이터 상태 추가
+  const [isSending, setIsSending] = useState(false); // 웹훅 전송 상태 추가
 
   // 오디오 녹음과 웹소켓 통신을 위한 도구들이에요.
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -139,11 +143,18 @@ export default function Home() {
             const summaryPrompt = localStorage.getItem("summaryPrompt");
             const detailsPrompt = localStorage.getItem("detailsPrompt");
 
+            // 사용자가 입력한 메모만 모아서 AI에게 같이 보낼 거예요
+            const userMemos = memosRef.current
+              .filter(m => m.type !== 'system')
+              .map(m => `[${m.time}] ${m.text}`)
+              .join('\n');
+
             const analyzeResponse = await fetch('/api/gemini/analyze', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ 
                 text: data.text,
+                memos: userMemos,
                 summaryPrompt,
                 detailsPrompt
               })
@@ -240,31 +251,145 @@ export default function Home() {
     setMemos((prev) => [...prev, newMemo]);
   };
 
-  return (
-    <div className="flex flex-col min-h-screen bg-white text-gray-900 font-sans">
-      {/* 1. 상단 제목 부분 */}
-      <Header />
+  const handleRefresh = () => {
+    if (window.confirm("정말 새로고침 하시겠습니까? 모든 기록이 초기화됩니다.")) {
+      window.location.reload();
+    }
+  };
 
-      <main className="flex flex-col md:flex-row flex-1 overflow-y-auto md:overflow-hidden">
+  const handleSendExternal = async () => {
+    if (!summary && !details && memos.length === 0) {
+      alert("전송할 데이터가 없습니다.");
+      return;
+    }
+    
+    setIsSending(true);
+    
+    try {
+      let markdownContent = `# 회의록 요약 및 상세 내용\n\n`;
+      
+      if (summary) {
+        markdownContent += `## 📝 요약\n\n${summary}\n\n`;
+      }
+      
+      let detailsText = '';
+      if (details) {
+        if (typeof details === 'string') {
+          detailsText = details;
+        } else {
+          detailsText += `### ${details.title || '회의 상세'}\n\n`;
+          
+          if (details.meta) {
+            Object.entries(details.meta).forEach(([key, value]) => {
+              detailsText += `- **${key}**: ${value}\n`;
+            });
+            detailsText += '\n';
+          }
+          
+          if (details.agendas && Array.isArray(details.agendas)) {
+            details.agendas.forEach((agenda: any, idx: number) => {
+              detailsText += `#### ${idx + 1}. ${agenda.title}\n\n`;
+              
+              if (agenda.discussions && Array.isArray(agenda.discussions)) {
+                detailsText += `**논의 사항:**\n`;
+                agenda.discussions.forEach((d: string) => {
+                  detailsText += `- ${d}\n`;
+                });
+                detailsText += '\n';
+              }
+              
+              if (agenda.decisions) {
+                detailsText += `**결정 사항:**\n${agenda.decisions}\n\n`;
+              }
+              
+              if (agenda.actions) {
+                detailsText += `**액션 아이템:**\n${agenda.actions}\n\n`;
+              }
+            });
+          }
+          
+          if (details.memoSummary) {
+            detailsText += `### 📌 메모 요약\n${details.memoSummary}\n\n`;
+          }
+          
+          if (details.nextMeeting) {
+            detailsText += `### 🗓 다음 회의\n${details.nextMeeting}\n\n`;
+          }
+          
+          if (details.additionalNotes) {
+            detailsText += `### 📝 추가 노트\n${details.additionalNotes}\n\n`;
+          }
+        }
+        
+        markdownContent += `## 📋 상세 회의록\n\n${detailsText}\n\n`;
+      }
+      
+      if (memos.length > 0) {
+        markdownContent += `## 📌 메모\n\n`;
+        memos.forEach(m => {
+          if (m.type !== 'system') {
+            markdownContent += `- [${m.time}] ${m.text}\n`;
+          }
+        });
+      }
+      
+      const payload = {
+        transcription: transcript || "",
+        summary: summary || "",
+        detail: detailsText || "",
+        script: markdownContent
+      };
+
+      const response = await fetch("https://hook.us2.make.com/sc3znwgywuyevshrvbuifctv7o1j78yy", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      });
+
+      if (response.ok) {
+        alert("데이터가 성공적으로 전송되었습니다.");
+      } else {
+        alert("데이터 전송에 실패했습니다.");
+      }
+    } catch (error) {
+      console.error("웹훅 전송 에러:", error);
+      alert("데이터 전송 중 오류가 발생했습니다.");
+    } finally {
+      setIsSending(false);
+    }
+  };
+
+  return (
+    <div className="flex flex-col min-h-screen bg-gray-50 text-gray-900 font-sans">
+      {/* 1. 상단 제목 부분 */}
+      <Header onRefresh={handleRefresh} onSendExternal={handleSendExternal} isSending={isSending} />
+
+      <main className="flex flex-col md:flex-row flex-1 overflow-hidden p-4 md:p-6 gap-6">
         {/* 2. 왼쪽: 녹음 버튼과 메모장 부분 */}
-        <RecordPanel 
-          isRecording={isRecording}
-          recordingTime={recordingTime}
-          onToggleRecord={handleToggleRecord}
-          memos={memos}
-          onAddMemo={handleAddMemo}
-          audioLevel={audioLevel}
-        />
+        <div className="w-full md:w-[380px] lg:w-[420px] flex-shrink-0 bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden flex flex-col h-full">
+          <RecordPanel 
+            isRecording={isRecording}
+            recordingTime={recordingTime}
+            onToggleRecord={handleToggleRecord}
+            memos={memos}
+            onAddMemo={handleAddMemo}
+            audioLevel={audioLevel}
+          />
+        </div>
         
         {/* 3. 오른쪽: AI가 작성해주는 회의록 부분 */}
-        <TranscriptPanel 
-          isRecording={isRecording}
-          isTranscribing={isTranscribing}
-          transcript={transcript}
-          fullTranscript={fullTranscript}
-          summary={summary}
-          details={details}
-        />
+        <div className="flex-1 bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden flex flex-col h-full min-w-0">
+          <TranscriptPanel 
+            isRecording={isRecording}
+            isTranscribing={isTranscribing}
+            transcript={transcript}
+            fullTranscript={fullTranscript}
+            summary={summary}
+            details={details}
+          />
+        </div>
       </main>
     </div>
   );
