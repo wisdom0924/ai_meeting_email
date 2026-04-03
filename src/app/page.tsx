@@ -5,6 +5,9 @@ import { TranscriptBlock, Memo } from "@/types";
 import Header from "@/components/Header";
 import RecordPanel from "@/components/RecordPanel";
 import TranscriptPanel from "@/components/TranscriptPanel";
+import EmailRecipientPanel, {
+  type EmailRecipientPanelHandle,
+} from "@/components/EmailRecipientPanel";
 import { withDefaultMeetingDateTime } from "@/lib/meeting-details-defaults";
 import {
   deepStripBasicMarkdown,
@@ -29,6 +32,8 @@ export default function Home() {
   const [summary, setSummary] = useState(""); // 500자 요약 데이터 상태 저장공간 추가
   const [details, setDetails] = useState<any>(null); // 상세 회의록 데이터 상태 추가
   const [isSending, setIsSending] = useState(false); // 웹훅 전송 상태 추가
+
+  const emailRecipientsRef = useRef<EmailRecipientPanelHandle>(null);
 
   // 오디오 녹음과 웹소켓 통신을 위한 도구들이에요.
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -438,6 +443,12 @@ export default function Home() {
         .filter(Boolean)
         .join("\n\n");
 
+      const { to: emailTo, cc: emailCc } =
+        emailRecipientsRef.current?.getResolvedEmails() ?? {
+          to: [] as string[],
+          cc: [] as string[],
+        };
+
       const payload = {
         transcription: stripBasicMarkdown(transcriptionForWebhook),
         transcriptBlocks: transcriptBlocks.map(({ time, text }) => ({
@@ -458,6 +469,8 @@ export default function Home() {
           time: m.time,
           text: stripBasicMarkdown(m.text),
         })),
+        emailTo,
+        emailCc,
       };
 
       const response = await fetch("https://hook.us2.make.com/cq56k8o1daqk6582t8kg85dgpts4mhe3", {
@@ -511,6 +524,16 @@ export default function Home() {
           />
         </div>
       </main>
+
+      <footer className="shrink-0 px-4 md:px-6 pb-6 max-w-[1600px] w-full mx-auto">
+        <EmailRecipientPanel
+          ref={emailRecipientsRef}
+          summary={summary}
+          details={details}
+          fullTranscript={fullTranscript}
+          transcript={transcript}
+        />
+      </footer>
     </div>
   );
 }
