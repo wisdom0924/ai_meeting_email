@@ -5,6 +5,10 @@ import { TranscriptBlock, Memo } from "@/types";
 import Header from "@/components/Header";
 import RecordPanel from "@/components/RecordPanel";
 import TranscriptPanel from "@/components/TranscriptPanel";
+import {
+  deepStripBasicMarkdown,
+  stripBasicMarkdown,
+} from "@/lib/strip-markdown";
 
 export default function Home() {
   const [memos, setMemos] = useState<Memo[]>([]);
@@ -258,7 +262,9 @@ export default function Home() {
   };
 
   const handleSendExternal = async () => {
-    if (!summary && !details && memos.length === 0) {
+    const hasUserMemos = memos.some((m) => m.type !== "system");
+    const hasTranscript = fullTranscript.length > 0;
+    if (!summary && !details && !hasUserMemos && !hasTranscript) {
       alert("전송할 데이터가 없습니다.");
       return;
     }
@@ -266,6 +272,28 @@ export default function Home() {
     setIsSending(true);
     
     try {
+      const now = new Date();
+      const pad = (n: number) => String(n).padStart(2, "0");
+      const defaultMeetingDateTime = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+      const NO_INFO = "정보 없음";
+      const strPresent = (v: unknown) => v != null && String(v).trim() !== "";
+
+      const transcriptPlain = fullTranscript
+        .map((b) => b.text)
+        .join("\n\n")
+        .trim();
+      const transcriptWithTime = fullTranscript
+        .map((b) => `[${b.time}] ${b.text}`)
+        .join("\n\n")
+        .trim();
+      const transcriptBlocks = fullTranscript.map(({ time, text }) => ({
+        time,
+        text,
+      }));
+      const userMemosPayload = memos
+        .filter((m) => m.type !== "system")
+        .map((m) => ({ time: m.time, text: m.text }));
+
       let markdownContent = `# 회의록 요약 및 상세 내용\n\n`;
       
       if (summary) {
@@ -281,63 +309,152 @@ export default function Home() {
           
           if (details.meta) {
             Object.entries(details.meta).forEach(([key, value]) => {
-              detailsText += `- **${key}**: ${value}\n`;
+              const empty = !strPresent(value);
+              let displayValue: unknown = value;
+              if (key === "회의 일시" && empty) {
+                displayValue = defaultMeetingDateTime;
+              } else if (empty) {
+                displayValue = NO_INFO;
+              }
+              detailsText += `- **${key}**: ${displayValue}\n`;
             });
             detailsText += '\n';
           }
           
           if (details.agendas && Array.isArray(details.agendas)) {
             details.agendas.forEach((agenda: any, idx: number) => {
-              detailsText += `#### ${idx + 1}. ${agenda.title}\n\n`;
-              
-              if (agenda.discussions && Array.isArray(agenda.discussions)) {
-                detailsText += `**논의 사항:**\n`;
+              const agendaTitle = strPresent(agenda.title)
+                ? agenda.title
+                : NO_INFO;
+              detailsText += `#### ${idx + 1}. ${agendaTitle}\n\n`;
+
+              detailsText += `**논의 사항:**\n`;
+              if (
+                agenda.discussions &&
+                Array.isArray(agenda.discussions) &&
+                agenda.discussions.length > 0
+              ) {
                 agenda.discussions.forEach((d: string) => {
                   detailsText += `- ${d}\n`;
                 });
-                detailsText += '\n';
+              } else {
+                detailsText += `- ${NO_INFO}\n`;
               }
-              
-              if (agenda.decisions) {
-                detailsText += `**결정 사항:**\n${agenda.decisions}\n\n`;
-              }
-              
-              if (agenda.actions) {
-                detailsText += `**액션 아이템:**\n${agenda.actions}\n\n`;
-              }
+              detailsText += "\n";
+
+              detailsText += `**결정 사항:**\n${
+                strPresent(agenda.decisions) ? agenda.decisions : NO_INFO
+              }\n\n`;
+              detailsText += `**액션 아이템:**\n${
+                strPresent(agenda.actions) ? agenda.actions : NO_INFO
+              }\n\n`;
             });
           }
-          
-          if (details.memoSummary) {
-            detailsText += `### 📌 메모 요약\n${details.memoSummary}\n\n`;
-          }
-          
-          if (details.nextMeeting) {
-            detailsText += `### 🗓 다음 회의\n${details.nextMeeting}\n\n`;
-          }
-          
-          if (details.additionalNotes) {
-            detailsText += `### 📝 추가 노트\n${details.additionalNotes}\n\n`;
-          }
+
+          detailsText += `### 📌 메모 요약\n${
+            strPresent(details.memoSummary) ? details.memoSummary : NO_INFO
+          }\n\n`;
+          detailsText += `### 🗓 다음 회의\n${
+            strPresent(details.nextMeeting) ? details.nextMeeting : NO_INFO
+          }\n\n`;
+          detailsText += `### 📝 추가 노트\n${
+            strPresent(details.additionalNotes)
+              ? details.additionalNotes
+              : NO_INFO
+          }\n\n`;
         }
         
         markdownContent += `## 📋 상세 회의록\n\n${detailsText}\n\n`;
       }
-      
-      if (memos.length > 0) {
+
+      if (transcriptWithTime) {
+        markdownContent += `## 🎙 전체 전사\n\n${transcriptWithTime}\n\n`;
+      }
+
+      if (userMemosPayload.length > 0) {
         markdownContent += `## 📌 메모\n\n`;
-        memos.forEach(m => {
-          if (m.type !== 'system') {
-            markdownContent += `- [${m.time}] ${m.text}\n`;
-          }
+        userMemosPayload.forEach((m) => {
+          markdownContent += `- [${m.time}] ${m.text}\n`;
         });
+        markdownContent += "\n";
       }
       
+      let meetingTitle = "";
+      if (details && typeof details === "object") {
+        const fromTitle = details.title;
+        if (fromTitle != null && String(fromTitle).trim() !== "") {
+          meetingTitle = String(fromTitle).trim();
+        } else if (details.meta && typeof details.meta === "object") {
+          const metaTitle = (details.meta as Record<string, unknown>)["회의 제목"];
+          if (metaTitle != null && String(metaTitle).trim() !== "") {
+            meetingTitle = String(metaTitle).trim();
+          }
+        }
+      }
+
+      let venue = "";
+      let attendees = "";
+      let organizer = "";
+      let meetingPurpose = "";
+      if (
+        details &&
+        typeof details === "object" &&
+        details.meta &&
+        typeof details.meta === "object"
+      ) {
+        const meta = details.meta as Record<string, unknown>;
+        const metaStr = (key: string) =>
+          strPresent(meta[key]) ? String(meta[key]).trim() : "";
+        venue = metaStr("장소");
+        attendees = metaStr("참석자");
+        organizer = metaStr("주최자");
+        meetingPurpose = metaStr("회의 목적");
+      }
+
+      let meetingDetailsForWebhook: unknown = null;
+      if (details && typeof details === "object") {
+        try {
+          meetingDetailsForWebhook = JSON.parse(JSON.stringify(details));
+        } catch {
+          meetingDetailsForWebhook = details;
+        }
+      } else if (details && typeof details === "string") {
+        meetingDetailsForWebhook = { _format: "text", content: details };
+      }
+
+      if (meetingDetailsForWebhook != null) {
+        meetingDetailsForWebhook = deepStripBasicMarkdown(
+          meetingDetailsForWebhook
+        );
+      }
+
+      const transcriptionForWebhook = [
+        transcriptPlain,
+        strPresent(transcript) ? String(transcript).trim() : "",
+      ]
+        .filter(Boolean)
+        .join("\n\n");
+
       const payload = {
-        transcription: transcript || "",
-        summary: summary || "",
-        detail: detailsText || "",
-        script: markdownContent
+        transcription: stripBasicMarkdown(transcriptionForWebhook),
+        transcriptBlocks: transcriptBlocks.map(({ time, text }) => ({
+          time,
+          text: stripBasicMarkdown(text),
+        })),
+        summary: stripBasicMarkdown(summary || ""),
+        detail: stripBasicMarkdown(detailsText || ""),
+        script: stripBasicMarkdown(markdownContent),
+        meetingDateTime: defaultMeetingDateTime,
+        title: stripBasicMarkdown(meetingTitle),
+        venue: stripBasicMarkdown(venue),
+        attendees: stripBasicMarkdown(attendees),
+        organizer: stripBasicMarkdown(organizer),
+        meetingPurpose: stripBasicMarkdown(meetingPurpose),
+        meetingDetails: meetingDetailsForWebhook,
+        memos: userMemosPayload.map((m) => ({
+          time: m.time,
+          text: stripBasicMarkdown(m.text),
+        })),
       };
 
       const response = await fetch("https://hook.us2.make.com/sc3znwgywuyevshrvbuifctv7o1j78yy", {

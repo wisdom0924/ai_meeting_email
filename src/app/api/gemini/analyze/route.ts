@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { GoogleGenerativeAI } from '@google/generative-ai';
+import { deepStripBasicMarkdown } from '@/lib/strip-markdown';
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
 
@@ -33,6 +34,7 @@ export async function POST(request: Request) {
 2. "details": 다음 지시사항에 맞게 상세 내용을 작성해주세요. 지시사항: ${finalDetailsPrompt}
 
 반드시 다음 구조를 갖는 JSON 형식으로만 응답해주세요. 응답은 다른 텍스트 없이 오직 JSON 객체만 있어야 합니다.
+모든 문자열 값은 마크다운 기호(#, *, **, 밑줄 강조 등) 없이 평문만 사용해주세요.
 {
   "summary": "요약 내용...",
   "details": {
@@ -78,7 +80,7 @@ ${memos ? memos : '작성된 메모가 없습니다.'}`;
     const responseText = result.response.text();
     const resultJson = JSON.parse(responseText);
 
-    return NextResponse.json(resultJson);
+    return NextResponse.json(deepStripBasicMarkdown(resultJson));
 
   } catch (error) {
     console.error('Gemini 요약 에러:', error);
