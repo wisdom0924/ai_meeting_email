@@ -5,6 +5,7 @@ import { TranscriptBlock, Memo } from "@/types";
 import Header from "@/components/Header";
 import RecordPanel from "@/components/RecordPanel";
 import TranscriptPanel from "@/components/TranscriptPanel";
+import { withDefaultMeetingDateTime } from "@/lib/meeting-details-defaults";
 import {
   deepStripBasicMarkdown,
   stripBasicMarkdown,
@@ -170,7 +171,9 @@ export default function Home() {
               setTranscript("요약본을 만드는 중에 문제가 생겼어요: " + analyzeData.error);
             } else {
               if (analyzeData.summary) setSummary(analyzeData.summary);
-              if (analyzeData.details) setDetails(analyzeData.details);
+              if (analyzeData.details) {
+                setDetails(withDefaultMeetingDateTime(analyzeData.details));
+              }
               setTranscript("");
             }
 
@@ -274,7 +277,7 @@ export default function Home() {
     try {
       const now = new Date();
       const pad = (n: number) => String(n).padStart(2, "0");
-      const defaultMeetingDateTime = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+      const defaultMeetingDate = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
       const NO_INFO = "정보 없음";
       const strPresent = (v: unknown) => v != null && String(v).trim() !== "";
 
@@ -312,7 +315,7 @@ export default function Home() {
               const empty = !strPresent(value);
               let displayValue: unknown = value;
               if (key === "회의 일시" && empty) {
-                displayValue = defaultMeetingDateTime;
+                displayValue = defaultMeetingDate;
               } else if (empty) {
                 displayValue = NO_INFO;
               }
@@ -444,7 +447,7 @@ export default function Home() {
         summary: stripBasicMarkdown(summary || ""),
         detail: stripBasicMarkdown(detailsText || ""),
         script: stripBasicMarkdown(markdownContent),
-        meetingDateTime: defaultMeetingDateTime,
+        meetingDateTime: defaultMeetingDate,
         title: stripBasicMarkdown(meetingTitle),
         venue: stripBasicMarkdown(venue),
         attendees: stripBasicMarkdown(attendees),
