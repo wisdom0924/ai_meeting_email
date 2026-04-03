@@ -460,7 +460,7 @@ export default function Home() {
         })),
       };
 
-      const response = await fetch("https://hook.us2.make.com/sc3znwgywuyevshrvbuifctv7o1j78yy", {
+      const response = await fetch("https://hook.us2.make.com/cq56k8o1daqk6582t8kg85dgpts4mhe3", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
