@@ -532,6 +532,7 @@ export default function Home() {
           details={details}
           fullTranscript={fullTranscript}
           transcript={transcript}
+          memos={memos}
         />
       </footer>
     </div>

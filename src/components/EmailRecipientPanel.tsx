@@ -8,7 +8,7 @@ import {
   useMemo,
   useState,
 } from "react";
-import type { TranscriptBlock } from "@/types";
+import type { Memo, TranscriptBlock } from "@/types";
 import type {
   DragPayload,
   StoredContact,
@@ -16,7 +16,12 @@ import type {
   ZoneSlot,
 } from "@/types/email-recipients";
 import { DND_MIME } from "@/types/email-recipients";
-import { buildSuggestedRecipients } from "@/lib/build-email-suggestions";
+import {
+  buildNameMatchedSuggestedRecipients,
+  buildSuggestedRecipients,
+  collectMeetingPlainText,
+  mergeSuggestedRecipients,
+} from "@/lib/build-email-suggestions";
 import { loadRecipientStore, saveRecipientStore } from "@/lib/email-recipient-storage";
 
 export type EmailRecipientPanelHandle = {
@@ -76,18 +81,28 @@ function parseDrag(raw: string | undefined): DragPayload | null {
   }
 }
 
+/** 시스템 메모(녹음 시작 등)는 제외하고, 사용자가 친 글만 이어 붙입니다. */
+function plainTextFromUserMemos(memos: Memo[]): string {
+  return memos
+    .filter((m) => m.type !== "system")
+    .map((m) => (m.text ?? "").trim())
+    .filter(Boolean)
+    .join("\n");
+}
+
 type EmailRecipientPanelProps = {
   summary: string;
   details: unknown;
   fullTranscript: TranscriptBlock[];
   transcript: string;
+  memos: Memo[];
 };
 
 const EmailRecipientPanel = forwardRef<
   EmailRecipientPanelHandle,
   EmailRecipientPanelProps
 >(function EmailRecipientPanel(
-  { summary, details, fullTranscript, transcript },
+  { summary, details, fullTranscript, transcript, memos },
   ref
 ) {
   const [tab, setTab] = useState<TabId>("suggested");
@@ -108,6 +123,8 @@ const EmailRecipientPanel = forwardRef<
   const [groupPasteText, setGroupPasteText] = useState("");
   /** null이면 새 그룹 추가, 값이 있으면 해당 id 그룹 수정 중 */
   const [editingGroupId, setEditingGroupId] = useState<string | null>(null);
+  /** null이면 새 연락처, 값이 있으면 해당 id 연락처 수정 중 */
+  const [editingContactId, setEditingContactId] = useState<string | null>(null);
 
   useEffect(() => {
     const s = loadRecipientStore();
@@ -119,11 +136,47 @@ const EmailRecipientPanel = forwardRef<
     saveRecipientStore({ contacts, groups });
   }, [contacts, groups]);
 
-  const suggestions = useMemo(
-    () =>
-      buildSuggestedRecipients(summary, details, fullTranscript, transcript),
-    [summary, details, fullTranscript, transcript]
-  );
+  useEffect(() => {
+    if (!editingContactId) return;
+    if (!contacts.some((c) => c.id === editingContactId)) {
+      setNewEmail("");
+      setNewLabel("");
+      setEditingContactId(null);
+    }
+  }, [contacts, editingContactId]);
+
+  const memoPlain = useMemo(() => plainTextFromUserMemos(memos), [memos]);
+
+  const suggestions = useMemo(() => {
+    const fromText = buildSuggestedRecipients(
+      summary,
+      details,
+      fullTranscript,
+      transcript,
+      memoPlain
+    );
+    const blob = collectMeetingPlainText(
+      summary,
+      details,
+      fullTranscript,
+      transcript,
+      memoPlain
+    );
+    const fromNames = buildNameMatchedSuggestedRecipients(
+      blob,
+      contacts,
+      groups
+    );
+    return mergeSuggestedRecipients(fromText, fromNames);
+  }, [
+    summary,
+    details,
+    fullTranscript,
+    transcript,
+    memoPlain,
+    contacts,
+    groups,
+  ]);
 
   const suggestionFiltered = useMemo(() => {
     const inTo = new Set(
@@ -149,18 +202,46 @@ const EmailRecipientPanel = forwardRef<
 
   useImperativeHandle(ref, () => ({ getResolvedEmails }), [getResolvedEmails]);
 
-  const addContact = useCallback(() => {
+  const saveContact = useCallback(() => {
     const email = newEmail.trim();
-    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return;
+    if (!email || !isValidEmail(email)) return;
     const label = newLabel.trim() || email;
-    setContacts((prev) => {
-      if (prev.some((c) => c.email.toLowerCase() === email.toLowerCase()))
-        return prev;
-      return [...prev, { id: newId(), email, label }];
-    });
+    if (editingContactId) {
+      setContacts((prev) => {
+        const dup = prev.some(
+          (c) =>
+            c.email.toLowerCase() === email.toLowerCase() &&
+            c.id !== editingContactId
+        );
+        if (dup) return prev;
+        return prev.map((c) =>
+          c.id === editingContactId ? { ...c, email, label } : c
+        );
+      });
+      setEditingContactId(null);
+    } else {
+      setContacts((prev) => {
+        if (prev.some((c) => c.email.toLowerCase() === email.toLowerCase()))
+          return prev;
+        return [...prev, { id: newId(), email, label }];
+      });
+    }
     setNewEmail("");
     setNewLabel("");
-  }, [newEmail, newLabel]);
+  }, [newEmail, newLabel, editingContactId]);
+
+  const startEditContact = useCallback((c: StoredContact) => {
+    setTab("favorites");
+    setEditingContactId(c.id);
+    setNewEmail(c.email);
+    setNewLabel(c.label);
+  }, []);
+
+  const cancelEditContact = useCallback(() => {
+    setEditingContactId(null);
+    setNewEmail("");
+    setNewLabel("");
+  }, []);
 
   const parseGroupLines = useCallback((raw: string) => {
     const lines = raw
@@ -576,7 +657,11 @@ const EmailRecipientPanel = forwardRef<
         <p className="text-xs text-gray-500 mt-1 leading-relaxed">
           위에서 주소를 고르거나 등록하고, 아래{" "}
           <strong className="text-gray-700">이번에 보낼 주소</strong> 칸으로
-          끌어다 놓으면 됩니다. 추천은 회의록·전사·참석자에서 메일을 찾아요.
+          끌어다 놓으면 됩니다. 추천은 회의록·전사·참석자·
+          <strong className="text-gray-700">왼쪽 메모</strong>에서도 메일·이름을
+          찾고, 글에 나온 이름이{" "}
+          <strong className="text-gray-700">자주 쓰는 주소</strong>와 같으면 그
+          주소도 넣어요.
         </p>
       </header>
 
@@ -627,10 +712,11 @@ const EmailRecipientPanel = forwardRef<
                 </span>
                 <div>
                   <h3 className="text-sm font-semibold text-gray-900">
-                    회의록에서 찾은 메일
+                    추천 주소
                   </h3>
                   <p className="text-[11px] text-gray-500">
-                    클릭으로 넣거나, 칩을 끌어서 아래 수신·참조로 옮기세요.
+                    메일 주소가 적혀 있거나, 저장해 둔 이름이 회의 글에 있으면
+                    여기에 뜹니다. 클릭·드래그로 수신·참조에 넣을 수 있어요.
                   </p>
                 </div>
               </div>
@@ -654,10 +740,19 @@ const EmailRecipientPanel = forwardRef<
                             label: s.label,
                           })
                         }
-                        className="inline-flex items-center max-w-[min(100%,280px)] truncate px-2.5 py-1 rounded-md bg-white text-gray-800 text-xs font-mono border border-gray-200 cursor-grab active:cursor-grabbing shadow-sm"
-                        title="드래그해서 수신·참조 칸에 놓기"
+                        className="inline-flex flex-col items-start gap-0.5 max-w-[min(100%,280px)] px-2.5 py-1 rounded-md bg-white text-gray-800 text-xs border border-gray-200 cursor-grab active:cursor-grabbing shadow-sm"
+                        title={
+                          s.fromSavedNameMatch
+                            ? `저장된 이름이 회의 글에 있음 — ${s.email}`
+                            : "드래그해서 수신·참조 칸에 놓기"
+                        }
                       >
-                        {s.email}
+                        <span className="font-mono truncate w-full">{s.email}</span>
+                        {s.fromSavedNameMatch ? (
+                          <span className="text-[10px] text-emerald-700 font-sans font-medium">
+                            이름 매칭 · {s.label}
+                          </span>
+                        ) : null}
                       </span>
                       <span className="flex flex-wrap gap-1.5 sm:ml-auto">
                         <button
@@ -712,8 +807,15 @@ const EmailRecipientPanel = forwardRef<
                       개별 연락처
                     </h4>
                     <p className="text-[11px] text-slate-500 mt-1 mb-3">
-                      이메일과 표시 이름을 적고 저장하세요.
+                      {editingContactId
+                        ? "수정 중이에요. 반영 또는 취소를 눌러 주세요."
+                        : "이메일과 표시 이름을 적고 저장하세요."}
                     </p>
+                    {editingContactId && (
+                      <p className="text-[11px] text-slate-700 bg-slate-100 border border-slate-200 rounded-lg px-2.5 py-1.5 mb-2">
+                        「수정 반영」으로 저장, 「취소」로 그만두기.
+                      </p>
+                    )}
                     <div className="space-y-2 flex-1">
                       <input
                         className={inputBase}
@@ -728,13 +830,24 @@ const EmailRecipientPanel = forwardRef<
                         onChange={(e) => setNewLabel(e.target.value)}
                       />
                     </div>
-                    <button
-                      type="button"
-                      className="mt-3 w-full text-sm font-medium bg-slate-800 text-white px-3 py-2.5 rounded-lg hover:bg-slate-900"
-                      onClick={addContact}
-                    >
-                      연락처 저장
-                    </button>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        className="flex-1 min-w-[120px] text-sm font-medium bg-slate-800 text-white px-3 py-2.5 rounded-lg hover:bg-slate-900"
+                        onClick={saveContact}
+                      >
+                        {editingContactId ? "수정 반영" : "연락처 저장"}
+                      </button>
+                      {editingContactId && (
+                        <button
+                          type="button"
+                          className="text-sm border border-gray-300 text-gray-700 px-4 py-2.5 rounded-lg hover:bg-white bg-white/80"
+                          onClick={cancelEditContact}
+                        >
+                          취소
+                        </button>
+                      )}
+                    </div>
                   </div>
 
                   {/* 그룹 만들기 */}
@@ -776,14 +889,41 @@ const EmailRecipientPanel = forwardRef<
                                   )
                               )
                               .map((c) => (
-                                <button
+                                <div
                                   key={c.id}
-                                  type="button"
-                                  className="text-xs px-2 py-1 rounded-md border border-violet-200 bg-white text-violet-900 hover:bg-violet-100/80"
-                                  onClick={() => appendContactToGroupDrafts(c)}
+                                  className="inline-flex max-w-full flex-wrap items-center gap-x-1.5 gap-y-1 rounded-lg border border-violet-200 bg-white py-1 pl-2 pr-1.5 w-fit"
                                 >
-                                  + {c.label}
-                                </button>
+                                  <button
+                                    type="button"
+                                    className="shrink-0 text-xs px-2 py-0.5 rounded-md border border-violet-200 bg-violet-50 text-violet-900 hover:bg-violet-100/80 font-medium max-w-[min(100%,9rem)] truncate"
+                                    title={`${c.label} — 그룹 멤버로 넣기`}
+                                    onClick={() => appendContactToGroupDrafts(c)}
+                                  >
+                                    + {c.label}
+                                  </button>
+                                  <span
+                                    className="min-w-0 max-w-[min(100%,12rem)] shrink text-[10px] text-violet-700/80 truncate font-mono"
+                                    title={c.email}
+                                  >
+                                    {c.email}
+                                  </span>
+                                  <span className="inline-flex shrink-0 items-center gap-0.5">
+                                    <button
+                                      type="button"
+                                      className="text-[10px] font-semibold text-violet-800 hover:bg-violet-100 rounded px-1.5 py-0.5"
+                                      onClick={() => startEditContact(c)}
+                                    >
+                                      수정
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className="text-[10px] font-semibold text-red-700 hover:bg-red-50 rounded px-1.5 py-0.5"
+                                      onClick={() => removeContact(c.id)}
+                                    >
+                                      삭제
+                                    </button>
+                                  </span>
+                                </div>
                               ))}
                             {contacts.every((c) =>
                               groupMemberDrafts.some(
@@ -939,7 +1079,7 @@ const EmailRecipientPanel = forwardRef<
                         여기 있는 칩을 아래{" "}
                         <strong className="text-slate-800">수신</strong>·
                         <strong className="text-slate-800">참조</strong> 칸으로
-                        드래그하세요. 칩의 ×는 목록에서 지우기예요.
+                        드래그하세요. 수정·×로 바꾸거나 목록에서 지울 수 있어요.
                       </p>
                     </div>
                   </div>
@@ -967,13 +1107,30 @@ const EmailRecipientPanel = forwardRef<
                                 contactId: c.id,
                               })
                             }
-                            className="inline-flex items-center gap-1 pl-2.5 pr-1 py-1 rounded-lg bg-slate-100 text-slate-900 text-xs font-medium border border-slate-200 cursor-grab active:cursor-grabbing shadow-sm hover:border-slate-300"
+                            className={`inline-flex items-center gap-0.5 pl-2.5 pr-1 py-1 rounded-lg text-xs font-medium border cursor-grab active:cursor-grabbing shadow-sm ${
+                              editingContactId === c.id
+                                ? "bg-slate-200 border-slate-500 text-slate-950 ring-2 ring-slate-400"
+                                : "bg-slate-100 text-slate-900 border-slate-200 hover:border-slate-300"
+                            }`}
                             title={c.email}
                           >
                             {c.label}
                             <button
                               type="button"
-                              className="text-slate-500 hover:text-red-600 hover:bg-red-50 rounded p-0.5"
+                              className="text-slate-700 hover:bg-slate-200/80 rounded px-1.5 py-0.5 text-[10px] font-semibold shrink-0"
+                              aria-label="연락처 수정"
+                              title="이름·메일 수정"
+                              onMouseDown={(e) => e.stopPropagation()}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                startEditContact(c);
+                              }}
+                            >
+                              수정
+                            </button>
+                            <button
+                              type="button"
+                              className="text-slate-500 hover:text-red-600 hover:bg-red-50 rounded p-0.5 shrink-0"
                               aria-label="연락처 삭제"
                               onMouseDown={(e) => e.stopPropagation()}
                               onClick={(e) => {
