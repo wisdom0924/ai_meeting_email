@@ -23,6 +23,7 @@ import {
   deepStripBasicMarkdown,
   stripBasicMarkdown,
 } from "@/lib/strip-markdown";
+import { MAX_AUDIO_UPLOAD_BYTES } from "@/lib/audio-upload-limits";
 
 export default function Home() {
   const [memos, setMemos] = useState<Memo[]>([]);
@@ -109,6 +110,195 @@ export default function Home() {
     [memos]
   );
 
+  const processAudioBlob = useCallback(
+    async (opts: {
+      blob: Blob;
+      filename: string;
+      systemMemoText: string;
+      promptsName: string;
+      promptSource: "recording_end" | "user";
+    }) => {
+      const { blob, filename, systemMemoText, promptsName, promptSource } = opts;
+      const audioUrl = URL.createObjectURL(blob);
+      const clientKeyForCloud = recordingClientKeyRef.current;
+
+      if (clientKeyForCloud && clientKeyForCloud.length >= 8) {
+        const uploadForm = new FormData();
+        uploadForm.append("audio", blob, filename);
+        uploadForm.append("client_key", clientKeyForCloud);
+        uploadForm.append("original_filename", filename);
+        void fetch("/api/recordings", { method: "POST", body: uploadForm })
+          .then(async (res) => {
+            if (res.ok) {
+              setCloudListVersion((v) => v + 1);
+              return;
+            }
+            const text = await res.text();
+            let parsed: Record<string, unknown> = {};
+            try {
+              parsed = text ? (JSON.parse(text) as Record<string, unknown>) : {};
+            } catch {
+              parsed = { raw: text };
+            }
+            console.error("[클라우드 녹음] 업로드 실패:", res.status, parsed);
+          })
+          .catch((e) => {
+            console.error("[클라우드 녹음] 업로드 요청 오류:", e);
+          });
+
+        const snapSummary = localStorage.getItem("summaryPrompt") ?? "";
+        const snapDetails = localStorage.getItem("detailsPrompt") ?? "";
+        void fetch("/api/prompts", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name: promptsName,
+            summary_prompt: snapSummary,
+            details_prompt: snapDetails,
+            client_key: clientKeyForCloud,
+            source: promptSource,
+          }),
+        })
+          .then((res) => {
+            if (res.ok) setPromptListVersion((v) => v + 1);
+          })
+          .catch(() => {});
+      }
+
+      const now = new Date();
+      setMemos((prev) => [
+        ...prev,
+        {
+          id: Date.now(),
+          text: systemMemoText,
+          time: now.toLocaleTimeString("ko-KR", {
+            hour: "2-digit",
+            minute: "2-digit",
+          }),
+          audioUrl: audioUrl,
+          type: "system",
+        },
+      ]);
+
+      try {
+        setIsTranscribing(true);
+        setTranscript(
+          "AI가 녹음된 목소리를 열심히 듣고 글자로 바꾸고 있어요! (약 10~30초 소요)"
+        );
+
+        const formData = new FormData();
+        formData.append("audio", blob, filename);
+
+        const response = await fetch("/api/assemblyai/transcribe", {
+          method: "POST",
+          body: formData,
+        });
+
+        const data = await response.json();
+
+        if (data.error) {
+          setTranscript("앗, 글자로 바꾸는 중에 문제가 생겼어요: " + data.error);
+          setIsTranscribing(false);
+          return;
+        }
+
+        const nowTime = new Date().toLocaleTimeString("ko-KR", {
+          hour: "2-digit",
+          minute: "2-digit",
+        });
+        const sentences = data.text
+          .split(". ")
+          .filter((s: string) => s.trim().length > 0)
+          .map((s: string) => s + ".");
+        const newBlocks = (sentences.length > 0 ? sentences : [data.text]).map(
+          (text: string, index: number) => ({
+            id: `${Date.now()}-${index}`,
+            text,
+            time: nowTime,
+          })
+        );
+
+        setFullTranscript((prev) => [...prev, ...newBlocks]);
+        setTranscript(
+          "회의 내용을 바탕으로 요약본과 상세 회의록을 만들고 있어요! (약 10초 소요)"
+        );
+
+        const summaryPrompt = localStorage.getItem("summaryPrompt");
+        const detailsPrompt = localStorage.getItem("detailsPrompt");
+
+        const userMemos = memosRef.current
+          .filter((m) => m.type !== "system")
+          .map((m) => `[${m.time}] ${m.text}`)
+          .join("\n");
+
+        const analyzeResponse = await fetch("/api/gemini/analyze", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            text: data.text,
+            memos: userMemos,
+            summaryPrompt,
+            detailsPrompt,
+          }),
+        });
+
+        const analyzeData = await analyzeResponse.json();
+
+        if (analyzeData.error) {
+          setTranscript("요약본을 만드는 중에 문제가 생겼어요: " + analyzeData.error);
+        } else {
+          if (analyzeData.summary) setSummary(analyzeData.summary);
+          if (analyzeData.details) {
+            setDetails(withDefaultMeetingDateTime(analyzeData.details));
+          }
+          setTranscript("");
+        }
+      } catch (error) {
+        console.error("변환 요청 실패:", error);
+        setTranscript("서버와 통신하는 데 실패했어요.");
+      } finally {
+        setIsTranscribing(false);
+      }
+    },
+    []
+  );
+
+  const handleAudioFileSelected = useCallback(
+    async (file: File) => {
+      if (isRecording) {
+        alert(
+          "녹음 중에는 파일을 올릴 수 없어요. 녹음을 멈춘 뒤 다시 시도해 주세요."
+        );
+        return;
+      }
+      if (isTranscribing) {
+        alert("지금 다른 음성을 처리 중이에요. 잠시만 기다려 주세요.");
+        return;
+      }
+      if (file.size > MAX_AUDIO_UPLOAD_BYTES) {
+        alert("파일이 너무 커요. 1GB 이하로 줄여 주세요.");
+        return;
+      }
+      if (file.size === 0) {
+        alert("빈 파일이에요.");
+        return;
+      }
+      const label = file.name?.trim() || "audio";
+      setTranscript("");
+      setSummary("");
+      setDetails(null);
+      await processAudioBlob({
+        blob: file,
+        filename: label,
+        systemMemoText:
+          "📁 오디오 파일을 불러왔습니다. AI가 회의록을 작성 중입니다...",
+        promptsName: `파일 ${label} · ${new Date().toLocaleString("ko-KR")}`,
+        promptSource: "user",
+      });
+    },
+    [isRecording, isTranscribing, processAudioBlob]
+  );
+
   const emailRecipientsRef = useRef<EmailRecipientPanelHandle>(null);
 
   // 오디오 녹음과 웹소켓 통신을 위한 도구들이에요.
@@ -175,142 +365,18 @@ export default function Home() {
         };
 
         mediaRecorder.onstop = async () => {
-          const mimeType = mediaRecorder.mimeType || 'audio/webm';
-          const fileExtension = mimeType.includes('mp4') ? 'mp4' : 'webm';
-          
+          const mimeType = mediaRecorder.mimeType || "audio/webm";
+          const fileExtension = mimeType.includes("mp4") ? "mp4" : "webm";
           const audioBlob = new Blob(audioChunksRef.current, { type: mimeType });
-          const audioUrl = URL.createObjectURL(audioBlob);
-
-          const clientKeyForCloud = recordingClientKeyRef.current;
-          if (clientKeyForCloud && clientKeyForCloud.length >= 8) {
-            const uploadForm = new FormData();
-            uploadForm.append("audio", audioBlob, `recording.${fileExtension}`);
-            uploadForm.append("client_key", clientKeyForCloud);
-            uploadForm.append(
-              "original_filename",
-              `recording.${fileExtension}`
-            );
-            void fetch("/api/recordings", { method: "POST", body: uploadForm })
-              .then(async (res) => {
-                if (res.ok) {
-                  setCloudListVersion((v) => v + 1);
-                  return;
-                }
-                const text = await res.text();
-                let parsed: Record<string, unknown> = {};
-                try {
-                  parsed = text ? (JSON.parse(text) as Record<string, unknown>) : {};
-                } catch {
-                  parsed = { raw: text };
-                }
-                console.error("[클라우드 녹음] 업로드 실패:", res.status, parsed);
-              })
-              .catch((e) => {
-                console.error("[클라우드 녹음] 업로드 요청 오류:", e);
-              });
-
-            const snapSummary = localStorage.getItem("summaryPrompt") ?? "";
-            const snapDetails = localStorage.getItem("detailsPrompt") ?? "";
-            void fetch("/api/prompts", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                name: `녹음 ${new Date().toLocaleString("ko-KR")}`,
-                summary_prompt: snapSummary,
-                details_prompt: snapDetails,
-                client_key: clientKeyForCloud,
-                source: "recording_end",
-              }),
-            })
-              .then((res) => {
-                if (res.ok) setPromptListVersion((v) => v + 1);
-              })
-              .catch(() => {});
-          }
-          
-          const now = new Date();
-          setMemos((prev) => [
-            ...prev,
-            {
-              id: Date.now(),
-              text: "⏹️ 녹음이 종료되었습니다. AI가 회의록을 작성 중입니다...",
-              time: now.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }),
-              audioUrl: audioUrl,
-              type: 'system'
-            }
-          ]);
-
-          try {
-            setIsTranscribing(true);
-            setTranscript("AI가 녹음된 목소리를 열심히 듣고 글자로 바꾸고 있어요! (약 10~30초 소요)");
-
-            const formData = new FormData();
-            formData.append("audio", audioBlob, `recording.${fileExtension}`);
-
-            // 1. 음성을 텍스트로 변환 (AssemblyAI)
-            const response = await fetch('/api/assemblyai/transcribe', {
-              method: 'POST',
-              body: formData,
-            });
-
-            const data = await response.json();
-
-            if (data.error) {
-              setTranscript("앗, 글자로 바꾸는 중에 문제가 생겼어요: " + data.error);
-              setIsTranscribing(false);
-              return;
-            }
-
-            const nowTime = new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' });
-            const sentences = data.text.split('. ').filter((s: string) => s.trim().length > 0).map((s: string) => s + '.');
-            const newBlocks = (sentences.length > 0 ? sentences : [data.text]).map((text: string, index: number) => ({
-              id: `${Date.now()}-${index}`,
-              text,
-              time: nowTime
-            }));
-            
-            setFullTranscript((prev) => [...prev, ...newBlocks]);
-            setTranscript("회의 내용을 바탕으로 요약본과 상세 회의록을 만들고 있어요! (약 10초 소요)");
-
-            // 2. 텍스트를 바탕으로 요약 및 상세 정보 생성 (Gemini API)
-            const summaryPrompt = localStorage.getItem("summaryPrompt");
-            const detailsPrompt = localStorage.getItem("detailsPrompt");
-
-            // 사용자가 입력한 메모만 모아서 AI에게 같이 보낼 거예요
-            const userMemos = memosRef.current
-              .filter(m => m.type !== 'system')
-              .map(m => `[${m.time}] ${m.text}`)
-              .join('\n');
-
-            const analyzeResponse = await fetch('/api/gemini/analyze', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ 
-                text: data.text,
-                memos: userMemos,
-                summaryPrompt,
-                detailsPrompt
-              })
-            });
-
-            const analyzeData = await analyzeResponse.json();
-
-            if (analyzeData.error) {
-              setTranscript("요약본을 만드는 중에 문제가 생겼어요: " + analyzeData.error);
-            } else {
-              if (analyzeData.summary) setSummary(analyzeData.summary);
-              if (analyzeData.details) {
-                setDetails(withDefaultMeetingDateTime(analyzeData.details));
-              }
-              setTranscript("");
-            }
-
-          } catch (error) {
-            console.error("변환 요청 실패:", error);
-            setTranscript("서버와 통신하는 데 실패했어요.");
-          } finally {
-            setIsTranscribing(false);
-          }
+          const recName = `recording.${fileExtension}`;
+          await processAudioBlob({
+            blob: audioBlob,
+            filename: recName,
+            systemMemoText:
+              "⏹️ 녹음이 종료되었습니다. AI가 회의록을 작성 중입니다...",
+            promptsName: `녹음 ${new Date().toLocaleString("ko-KR")}`,
+            promptSource: "recording_end",
+          });
         };
 
         mediaRecorder.start();
@@ -663,10 +729,13 @@ export default function Home() {
               memos={memos}
               onAddMemo={handleAddMemo}
               audioLevel={audioLevel}
+              onAudioFileSelected={handleAudioFileSelected}
+              uploadBusy={isTranscribing}
             />
             <div className="p-4 border-t border-gray-100 shrink-0">
               <p className="text-xs text-gray-500 leading-relaxed">
-                녹음이 끝나면 파일이 클라우드에 저장돼요. 과거 녹음은 오른쪽 위
+                녹음을 끝내거나 파일을 올리면 음성이 클라우드에 저장돼요. 과거
+                녹음은 오른쪽 위
                 <span className="font-medium text-gray-700"> 히스토리 </span>
                 버튼에서 볼 수 있어요.
               </p>

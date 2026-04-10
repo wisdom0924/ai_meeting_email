@@ -8,6 +8,9 @@ const BUCKET = "meeting-recordings";
 function normalizeAudioMimeType(raw: string): string {
   const base = raw.split(";")[0]?.trim().toLowerCase() || "audio/webm";
   if (base === "audio/x-m4a") return "audio/mp4";
+  // 녹음·다운로드된 webm 이 오디오만 있어도 OS/브라우저가 video/webm 으로 주는 경우가 있음.
+  // Supabase Storage 버킷은 보통 audio/webm 만 허용하고 video/webm 은 거절함.
+  if (base === "video/webm") return "audio/webm";
   return base || "audio/webm";
 }
 
@@ -17,7 +20,34 @@ function extFromMime(mime: string): string {
   if (mime.includes("mpeg") || mime.includes("mp3")) return "mp3";
   if (mime.includes("wav")) return "wav";
   if (mime.includes("ogg")) return "ogg";
+  if (mime.includes("flac")) return "flac";
+  if (mime.includes("aac")) return "aac";
   return "webm";
+}
+
+/** 브라우저가 type을 비우거나 application/octet-stream 으로 보낼 때 파일명으로 추정 */
+function guessMimeFromFilename(name: string): string | null {
+  const ext = name.split(".").pop()?.toLowerCase() ?? "";
+  const map: Record<string, string> = {
+    mp3: "audio/mpeg",
+    wav: "audio/wav",
+    webm: "audio/webm",
+    m4a: "audio/mp4",
+    mp4: "audio/mp4",
+    ogg: "audio/ogg",
+    flac: "audio/flac",
+    aac: "audio/aac",
+  };
+  return map[ext] ?? null;
+}
+
+function resolveAudioMimeType(blob: Blob, originalFilename: string | undefined): string {
+  const raw = blob.type?.split(";")[0]?.trim().toLowerCase() || "";
+  if (raw && raw !== "application/octet-stream") {
+    return normalizeAudioMimeType(raw);
+  }
+  const fromName = originalFilename ? guessMimeFromFilename(originalFilename) : null;
+  return normalizeAudioMimeType(fromName || "audio/webm");
 }
 
 export async function GET(request: Request) {
@@ -97,7 +127,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const mimeType = normalizeAudioMimeType(audio.type || "audio/webm");
+    const mimeType = resolveAudioMimeType(audio, originalFilename);
     const ext = extFromMime(mimeType);
     const id = crypto.randomUUID();
     const storagePath = `${clientKey}/${id}.${ext}`;

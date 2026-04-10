@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { Memo } from "@/types";
+import { MAX_AUDIO_UPLOAD_BYTES } from "@/lib/audio-upload-limits";
 
 interface RecordPanelProps {
   isRecording: boolean;
@@ -10,6 +11,8 @@ interface RecordPanelProps {
   memos: Memo[];
   onAddMemo: (text: string) => void;
   audioLevel?: number;
+  onAudioFileSelected?: (file: File) => void;
+  uploadBusy?: boolean;
 }
 
 export default function RecordPanel({
@@ -18,9 +21,12 @@ export default function RecordPanel({
   onToggleRecord,
   memos,
   onAddMemo,
-  audioLevel = 0
+  audioLevel = 0,
+  onAudioFileSelected,
+  uploadBusy = false,
 }: RecordPanelProps) {
   const [inputText, setInputText] = useState("");
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
@@ -94,6 +100,35 @@ export default function RecordPanel({
             </>
           )}
         </button>
+
+        {onAudioFileSelected && (
+          <>
+            <input
+              ref={fileInputRef}
+              type="file"
+              className="sr-only"
+              accept="audio/*,.mp3,.wav,.m4a,.webm,.ogg,.aac,.flac"
+              aria-label="오디오 파일 선택"
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                e.target.value = "";
+                if (f) onAudioFileSelected(f);
+              }}
+            />
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={isRecording || uploadBusy}
+              className="w-full py-3 px-6 text-sm font-medium tracking-wide border border-gray-200 text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-40 disabled:pointer-events-none transition-colors"
+            >
+              {uploadBusy ? "처리 중…" : "오디오 파일 올리기"}
+            </button>
+            <p className="text-[11px] text-gray-400 text-center leading-relaxed px-1">
+              mp3, wav, m4a 등 (최대{" "}
+              {Math.round(MAX_AUDIO_UPLOAD_BYTES / (1024 * 1024 * 1024))}GB)
+            </p>
+          </>
+        )}
       </div>
 
       {/* 실시간 메모 리스트 & 입력창 */}
