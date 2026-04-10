@@ -45,3 +45,7 @@ next-env.d.ts
 
 # history
 /.history/
+
+# todo
+/docs/TODO.md
+TODO.md

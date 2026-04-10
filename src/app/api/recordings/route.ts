@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSupabaseAdmin, isSupabaseConfigured } from "@/lib/supabase-admin";
 import { createClient } from "@/lib/supabase/server";
+import { isUndefinedColumnError } from "@/lib/supabase-postgres-errors";
 
 const BUCKET = "meeting-recordings";
 
@@ -68,29 +69,60 @@ export async function GET(request: Request) {
     } = await supabaseAuth.auth.getUser();
 
     const supabase = getSupabaseAdmin();
-    let query = supabase
-      .from("meeting_recordings")
-      .select("id, created_at, original_filename, mime_type, storage_path")
-      .order("created_at", { ascending: false })
-      .limit(50);
 
-    if (user) {
-      query = query.eq("user_id", user.id);
-    } else {
-      if (!clientKey || clientKey.length < 8) {
-        return NextResponse.json({ error: "client_key가 필요합니다." }, { status: 400 });
+    const buildListQuery = (select: string) => {
+      let q = supabase
+        .from("meeting_recordings")
+        .select(select)
+        .order("created_at", { ascending: false })
+        .limit(50);
+      if (user) {
+        q = q.eq("user_id", user.id);
+      } else {
+        if (!clientKey || clientKey.length < 8) {
+          return null;
+        }
+        q = q.eq("client_key", clientKey).is("user_id", null);
       }
-      query = query.eq("client_key", clientKey).is("user_id", null);
+      return q;
+    };
+
+    const q1 = buildListQuery(
+      "id, created_at, original_filename, mime_type, storage_path, ai_processed_at"
+    );
+    if (!q1) {
+      return NextResponse.json({ error: "client_key가 필요합니다." }, { status: 400 });
     }
 
-    const { data, error } = await query;
+    const first = await q1;
+    let rows: unknown[] | null = (first.data as unknown[] | null) ?? null;
+    let listError = first.error;
 
-    if (error) {
-      console.error("recordings list:", error);
+    if (listError && isUndefinedColumnError(listError)) {
+      const q2 = buildListQuery(
+        "id, created_at, original_filename, mime_type, storage_path"
+      );
+      if (!q2) {
+        return NextResponse.json({ error: "client_key가 필요합니다." }, { status: 400 });
+      }
+      const second = await q2;
+      listError = second.error;
+      if (!listError && Array.isArray(second.data)) {
+        rows = second.data.map((row) => ({
+          ...(row as unknown as Record<string, unknown>),
+          ai_processed_at: null,
+        }));
+      } else {
+        rows = (second.data as unknown[] | null) ?? null;
+      }
+    }
+
+    if (listError) {
+      console.error("recordings list:", listError);
       return NextResponse.json({ error: "목록을 불러오지 못했습니다." }, { status: 500 });
     }
 
-    return NextResponse.json({ recordings: data ?? [] });
+    return NextResponse.json({ recordings: rows ?? [] });
   } catch (e) {
     console.error(e);
     return NextResponse.json({ error: "서버 오류" }, { status: 500 });

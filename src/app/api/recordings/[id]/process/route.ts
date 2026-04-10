@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/server";
 import { canAccessMeetingRecording } from "@/lib/meeting-recording-access";
 import { buildTranscriptBlocksFromText } from "@/lib/transcript-blocks";
 import { withDefaultMeetingDateTime } from "@/lib/meeting-details-defaults";
+import { isUndefinedColumnError } from "@/lib/supabase-postgres-errors";
 
 const BUCKET = "meeting-recordings";
 
@@ -76,6 +77,23 @@ export async function POST(request: Request, context: RouteContext) {
       rawDetails && typeof rawDetails === "object"
         ? withDefaultMeetingDateTime(rawDetails)
         : rawDetails;
+
+    const processedAt = new Date().toISOString();
+    const { error: cacheError } = await supabase
+      .from("meeting_recordings")
+      .update({
+        ai_processed_at: processedAt,
+        ai_transcript_blocks: transcriptBlocks,
+        ai_summary: analyzed.summary ?? "",
+        ai_details: detailsOut,
+      })
+      .eq("id", id);
+
+    if (cacheError) {
+      if (!isUndefinedColumnError(cacheError)) {
+        console.error("meeting_recordings ai cache (process):", cacheError);
+      }
+    }
 
     return NextResponse.json({
       text,

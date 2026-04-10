@@ -9,6 +9,8 @@ export type CloudRecordingRow = {
   original_filename: string | null;
   mime_type: string | null;
   storage_path: string;
+  /** 저장된 AI 결과가 있으면 시각 (없으면 null) */
+  ai_processed_at: string | null;
 };
 
 type CloudRecordingsPanelProps = {
@@ -41,7 +43,10 @@ export default function CloudRecordingsPanel({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [disabledReason, setDisabledReason] = useState<string | null>(null);
-  const [processingId, setProcessingId] = useState<string | null>(null);
+  const [processing, setProcessing] = useState<{
+    id: string;
+    kind: "load" | "analyze";
+  } | null>(null);
   /** 서버에서 받은 임시 재생 URL (같은 항목에서 '닫기'로 끔) */
   const [audioPreview, setAudioPreview] = useState<{
     id: string;
@@ -83,7 +88,7 @@ export default function CloudRecordingsPanel({
   }, [load, refreshVersion]);
 
   const handleProcess = async (id: string) => {
-    setProcessingId(id);
+    setProcessing({ id, kind: "analyze" });
     onBusyChange?.(true);
     try {
       const res = await fetch(`/api/recordings/${id}/process`, {
@@ -106,10 +111,40 @@ export default function CloudRecordingsPanel({
         summary: data.summary || "",
         details: data.details ?? null,
       });
+      void load();
     } catch {
       alert("다시 분석 중 오류가 났어요.");
     } finally {
-      setProcessingId(null);
+      setProcessing(null);
+      onBusyChange?.(false);
+    }
+  };
+
+  const handleLoadCached = async (id: string) => {
+    setProcessing({ id, kind: "load" });
+    onBusyChange?.(true);
+    try {
+      const res = await fetch(
+        `/api/recordings/${encodeURIComponent(id)}/result?client_key=${encodeURIComponent(clientKey)}`
+      );
+      const data = await res.json();
+      if (!res.ok) {
+        alert(
+          typeof data.error === "string"
+            ? data.error
+            : "저장본을 불러오지 못했어요."
+        );
+        return;
+      }
+      onProcessed({
+        transcriptBlocks: data.transcriptBlocks || [],
+        summary: data.summary || "",
+        details: data.details ?? null,
+      });
+    } catch {
+      alert("불러오기 중 오류가 났어요.");
+    } finally {
+      setProcessing(null);
       onBusyChange?.(false);
     }
   };
@@ -240,13 +275,33 @@ export default function CloudRecordingsPanel({
                         ? "닫기"
                         : "듣기"}
                   </button>
+                  {r.ai_processed_at ? (
+                    <button
+                      type="button"
+                      disabled={processing !== null}
+                      onClick={() => void handleLoadCached(r.id)}
+                      className="rounded-lg bg-gray-900 px-2 py-1 text-[11px] font-medium text-white disabled:opacity-50"
+                    >
+                      {processing?.id === r.id && processing.kind === "load"
+                        ? "불러오는 중…"
+                        : "불러오기"}
+                    </button>
+                  ) : null}
                   <button
                     type="button"
-                    disabled={processingId !== null}
+                    disabled={processing !== null}
                     onClick={() => void handleProcess(r.id)}
-                    className="rounded-lg bg-gray-900 px-2 py-1 text-[11px] font-medium text-white disabled:opacity-50"
+                    className={`rounded-lg px-2 py-1 text-[11px] font-medium disabled:opacity-50 ${
+                      r.ai_processed_at
+                        ? "border border-gray-300 bg-white text-gray-800 hover:bg-gray-50"
+                        : "bg-gray-900 text-white"
+                    }`}
                   >
-                    {processingId === r.id ? "처리 중…" : "AI로 다시 분석"}
+                    {processing?.id === r.id && processing.kind === "analyze"
+                      ? "분석 중…"
+                      : r.ai_processed_at
+                        ? "다시 분석"
+                        : "AI로 분석"}
                   </button>
                 </div>
               </div>

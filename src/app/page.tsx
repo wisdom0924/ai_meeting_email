@@ -121,30 +121,39 @@ export default function Home() {
       const { blob, filename, systemMemoText, promptsName, promptSource } = opts;
       const audioUrl = URL.createObjectURL(blob);
       const clientKeyForCloud = recordingClientKeyRef.current;
+      let cloudRecordingId: string | null = null;
 
       if (clientKeyForCloud && clientKeyForCloud.length >= 8) {
-        const uploadForm = new FormData();
-        uploadForm.append("audio", blob, filename);
-        uploadForm.append("client_key", clientKeyForCloud);
-        uploadForm.append("original_filename", filename);
-        void fetch("/api/recordings", { method: "POST", body: uploadForm })
-          .then(async (res) => {
-            if (res.ok) {
-              setCloudListVersion((v) => v + 1);
-              return;
+        try {
+          const uploadForm = new FormData();
+          uploadForm.append("audio", blob, filename);
+          uploadForm.append("client_key", clientKeyForCloud);
+          uploadForm.append("original_filename", filename);
+          const uploadRes = await fetch("/api/recordings", {
+            method: "POST",
+            body: uploadForm,
+          });
+          if (uploadRes.ok) {
+            const uploadData = (await uploadRes.json()) as {
+              recording?: { id?: string };
+            };
+            if (uploadData.recording?.id) {
+              cloudRecordingId = uploadData.recording.id;
             }
-            const text = await res.text();
+            setCloudListVersion((v) => v + 1);
+          } else {
+            const text = await uploadRes.text();
             let parsed: Record<string, unknown> = {};
             try {
               parsed = text ? (JSON.parse(text) as Record<string, unknown>) : {};
             } catch {
               parsed = { raw: text };
             }
-            console.error("[클라우드 녹음] 업로드 실패:", res.status, parsed);
-          })
-          .catch((e) => {
-            console.error("[클라우드 녹음] 업로드 요청 오류:", e);
-          });
+            console.error("[클라우드 녹음] 업로드 실패:", uploadRes.status, parsed);
+          }
+        } catch (e) {
+          console.error("[클라우드 녹음] 업로드 요청 오류:", e);
+        }
 
         const snapSummary = localStorage.getItem("summaryPrompt") ?? "";
         const snapDetails = localStorage.getItem("detailsPrompt") ?? "";
@@ -252,6 +261,30 @@ export default function Home() {
             setDetails(withDefaultMeetingDateTime(analyzeData.details));
           }
           setTranscript("");
+
+          if (cloudRecordingId && clientKeyForCloud && clientKeyForCloud.length >= 8) {
+            const detailsToSave =
+              analyzeData.details != null
+                ? withDefaultMeetingDateTime(analyzeData.details)
+                : null;
+            void fetch(
+              `/api/recordings/${encodeURIComponent(cloudRecordingId)}/result`,
+              {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  client_key: clientKeyForCloud,
+                  transcriptBlocks: newBlocks,
+                  summary: analyzeData.summary ?? "",
+                  details: detailsToSave,
+                }),
+              }
+            )
+              .then((res) => {
+                if (res.ok) setCloudListVersion((v) => v + 1);
+              })
+              .catch(() => {});
+          }
         }
       } catch (error) {
         console.error("변환 요청 실패:", error);
@@ -260,7 +293,7 @@ export default function Home() {
         setIsTranscribing(false);
       }
     },
-    []
+    [setCloudListVersion, setPromptListVersion]
   );
 
   const handleAudioFileSelected = useCallback(
@@ -757,14 +790,7 @@ export default function Home() {
       </main>
 
       <footer className="shrink-0 px-4 md:px-6 pb-6 max-w-[1600px] w-full mx-auto">
-        <EmailRecipientPanel
-          ref={emailRecipientsRef}
-          summary={summary}
-          details={details}
-          fullTranscript={fullTranscript}
-          transcript={transcript}
-          memos={memos}
-        />
+        <EmailRecipientPanel ref={emailRecipientsRef} />
       </footer>
     </div>
   );
