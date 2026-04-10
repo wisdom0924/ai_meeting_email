@@ -1,8 +1,12 @@
 import { NextResponse } from "next/server";
 import { transcribeAudioBuffer } from "@/lib/assemblyai-transcribe";
+import { requireAuthenticatedUserForApi } from "@/lib/require-authenticated-user";
 
 export async function POST(request: Request) {
   try {
+    const auth = await requireAuthenticatedUserForApi();
+    if (!auth.ok) return auth.response;
+
     const apiKey = process.env.ASSEMBLY_API_KEY || process.env.ASSEMBLYAI_API_KEY || "";
 
     if (!apiKey) {
@@ -32,7 +36,7 @@ export async function POST(request: Request) {
   } catch (error) {
     console.error("Transcription failed:", error);
     return NextResponse.json(
-      { error: "음성을 글자로 변환하는 데 실패했습니다.", details: String(error) },
+      { error: "음성을 글자로 변환하는 데 실패했습니다." },
       { status: 500 }
     );
   }

@@ -201,7 +201,20 @@ export default function Home() {
         const response = await fetch("/api/assemblyai/transcribe", {
           method: "POST",
           body: formData,
+          credentials: "include",
         });
+
+        if (response.status === 401 || response.status === 503) {
+          const errJson = (await response.json().catch(() => ({}))) as {
+            error?: string;
+          };
+          setTranscript(
+            errJson.error ??
+              "이 기능을 쓰려면 로그인과 Supabase 설정이 필요해요."
+          );
+          setIsTranscribing(false);
+          return;
+        }
 
         const data = await response.json();
 
@@ -243,6 +256,7 @@ export default function Home() {
         const analyzeResponse = await fetch("/api/gemini/analyze", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
+          credentials: "include",
           body: JSON.stringify({
             text: data.text,
             memos: userMemos,
@@ -250,6 +264,18 @@ export default function Home() {
             detailsPrompt,
           }),
         });
+
+        if (analyzeResponse.status === 401 || analyzeResponse.status === 503) {
+          const errJson = (await analyzeResponse.json().catch(() => ({}))) as {
+            error?: string;
+          };
+          setTranscript(
+            errJson.error ??
+              "요약을 만들려면 로그인과 Supabase 설정이 필요해요."
+          );
+          setIsTranscribing(false);
+          return;
+        }
 
         const analyzeData = await analyzeResponse.json();
 
@@ -751,7 +777,7 @@ export default function Home() {
         }}
       />
 
-      <main className="flex flex-col md:flex-row flex-1 overflow-hidden p-4 md:p-6 gap-6">
+      <main className="flex flex-col md:flex-row flex-1 min-h-0 overflow-hidden p-4 md:p-6 gap-6">
         {/* 2. 왼쪽: 녹음 버튼과 메모장 부분 */}
         <div className="w-full md:w-[380px] lg:w-[420px] flex-shrink-0 bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden flex flex-col h-full min-h-0">
           <div className="flex-1 min-h-0 overflow-y-auto flex flex-col">
@@ -775,23 +801,24 @@ export default function Home() {
             </div>
           </div>
         </div>
-        
-        {/* 3. 오른쪽: AI가 작성해주는 회의록 부분 */}
-        <div className="flex-1 bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden flex flex-col h-full min-w-0">
-          <TranscriptPanel 
-            isRecording={isRecording}
-            isTranscribing={isTranscribing || cloudProcessing}
-            transcript={transcript}
-            fullTranscript={fullTranscript}
-            summary={summary}
-            details={details}
-          />
+
+        {/* 3. 오른쪽: 분석(회의록) + 그 아래 이메일 */}
+        <div className="flex-1 flex flex-col min-h-0 min-w-0 gap-4">
+          <div className="flex-1 min-h-0 bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden flex flex-col">
+            <TranscriptPanel 
+              isRecording={isRecording}
+              isTranscribing={isTranscribing || cloudProcessing}
+              transcript={transcript}
+              fullTranscript={fullTranscript}
+              summary={summary}
+              details={details}
+            />
+          </div>
+          <div className="shrink-0 w-full">
+            <EmailRecipientPanel ref={emailRecipientsRef} />
+          </div>
         </div>
       </main>
-
-      <footer className="shrink-0 px-4 md:px-6 pb-6 max-w-[1600px] w-full mx-auto">
-        <EmailRecipientPanel ref={emailRecipientsRef} />
-      </footer>
     </div>
   );
 }

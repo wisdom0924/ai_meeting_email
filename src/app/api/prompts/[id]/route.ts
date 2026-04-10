@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSupabaseAdmin, isSupabaseConfigured } from "@/lib/supabase-admin";
 import type { PromptRow } from "@/lib/prompt-row";
+import { isValidClientKeyForApi } from "@/lib/client-key-validation";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
@@ -23,7 +24,14 @@ export async function GET(request: Request, context: RouteContext) {
 
     const { id } = await context.params;
     const { searchParams } = new URL(request.url);
-    const clientKey = searchParams.get("client_key")?.trim() ?? null;
+    const clientKeyRaw = searchParams.get("client_key")?.trim() ?? "";
+    if (
+      clientKeyRaw !== "" &&
+      (clientKeyRaw.length < 8 || !isValidClientKeyForApi(clientKeyRaw))
+    ) {
+      return NextResponse.json({ error: "유효한 client_key가 필요합니다." }, { status: 400 });
+    }
+    const clientKey = clientKeyRaw === "" ? null : clientKeyRaw;
 
     const supabase = getSupabaseAdmin();
     const { data, error } = await supabase
@@ -57,9 +65,11 @@ export async function PATCH(request: Request, context: RouteContext) {
 
     const { id } = await context.params;
     const body = await request.json();
+    const rawPatchKey =
+      typeof body.client_key === "string" ? body.client_key.trim() : "";
     const clientKey =
-      typeof body.client_key === "string" && body.client_key.trim().length >= 8
-        ? body.client_key.trim()
+      rawPatchKey.length >= 8 && isValidClientKeyForApi(rawPatchKey)
+        ? rawPatchKey
         : null;
 
     const supabase = getSupabaseAdmin();
@@ -114,10 +124,10 @@ export async function DELETE(request: Request, context: RouteContext) {
 
     const { id } = await context.params;
     const { searchParams } = new URL(request.url);
-    const clientKey = searchParams.get("client_key")?.trim() ?? null;
+    const clientKey = searchParams.get("client_key")?.trim() ?? "";
 
-    if (!clientKey || clientKey.length < 8) {
-      return NextResponse.json({ error: "client_key가 필요합니다." }, { status: 400 });
+    if (!clientKey || clientKey.length < 8 || !isValidClientKeyForApi(clientKey)) {
+      return NextResponse.json({ error: "유효한 client_key가 필요합니다." }, { status: 400 });
     }
 
     const supabase = getSupabaseAdmin();

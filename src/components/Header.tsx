@@ -44,10 +44,37 @@ export default function Header({
   const [deleting, setDeleting] = useState(false);
   const [authEnabled, setAuthEnabled] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
+  const [userEmail, setUserEmail] = useState<string | null>(null);
 
   useEffect(() => {
     setAuthEnabled(isSupabaseBrowserConfigured());
   }, []);
+
+  useEffect(() => {
+    if (!authEnabled) {
+      setUserEmail(null);
+      return;
+    }
+    const supabase = createClient();
+    let cancelled = false;
+    void (async () => {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      if (!cancelled) {
+        setUserEmail(session?.user?.email?.trim() || null);
+      }
+    })();
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUserEmail(session?.user?.email?.trim() || null);
+    });
+    return () => {
+      cancelled = true;
+      subscription.unsubscribe();
+    };
+  }, [authEnabled]);
 
   const handleSignOut = async () => {
     if (!authEnabled) return;
@@ -329,15 +356,25 @@ export default function Header({
             </button>
           )}
           {authEnabled && (
-            <button
-              type="button"
-              onClick={() => void handleSignOut()}
-              disabled={signingOut}
-              className="inline-flex items-center rounded-lg border border-gray-200 bg-white px-2.5 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 sm:px-3"
-              title="로그아웃"
-            >
-              {signingOut ? "나가는 중…" : "로그아웃"}
-            </button>
+            <div className="flex min-w-0 max-w-[min(100%,14rem)] items-center gap-2 sm:max-w-xs">
+              {userEmail ? (
+                <span
+                  className="truncate text-xs text-gray-600"
+                  title={userEmail}
+                >
+                  {userEmail}
+                </span>
+              ) : null}
+              <button
+                type="button"
+                onClick={() => void handleSignOut()}
+                disabled={signingOut}
+                className="inline-flex shrink-0 items-center rounded-lg border border-gray-200 bg-white px-2.5 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 sm:px-3"
+                title="로그아웃"
+              >
+                {signingOut ? "나가는 중…" : "로그아웃"}
+              </button>
+            </div>
           )}
           <button 
             onClick={() => setIsModalOpen(true)}

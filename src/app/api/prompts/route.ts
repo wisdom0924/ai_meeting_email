@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSupabaseAdmin, isSupabaseConfigured } from "@/lib/supabase-admin";
 import type { PromptRow } from "@/lib/prompt-row";
+import { isValidClientKeyForApi } from "@/lib/client-key-validation";
 
 export async function GET(request: Request) {
   try {
@@ -14,8 +15,8 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const clientKey = searchParams.get("client_key")?.trim();
 
-    if (!clientKey || clientKey.length < 8) {
-      return NextResponse.json({ error: "client_key가 필요합니다." }, { status: 400 });
+    if (!clientKey || clientKey.length < 8 || !isValidClientKeyForApi(clientKey)) {
+      return NextResponse.json({ error: "유효한 client_key가 필요합니다." }, { status: 400 });
     }
 
     const supabase = getSupabaseAdmin();
@@ -52,10 +53,10 @@ export async function POST(request: Request) {
       typeof body.summary_prompt === "string" ? body.summary_prompt : "";
     const details_prompt =
       typeof body.details_prompt === "string" ? body.details_prompt : "";
+    const rawKey =
+      typeof body.client_key === "string" ? body.client_key.trim() : "";
     const clientKey =
-      typeof body.client_key === "string" && body.client_key.trim().length >= 8
-        ? body.client_key.trim()
-        : null;
+      rawKey.length >= 8 && isValidClientKeyForApi(rawKey) ? rawKey : null;
     const sourceRaw = typeof body.source === "string" ? body.source : "user";
     const source =
       sourceRaw === "recording_end" || sourceRaw === "seed" || sourceRaw === "user"

@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { getSupabaseAdmin, isSupabaseConfigured } from "@/lib/supabase-admin";
 import { createClient } from "@/lib/supabase/server";
 import { isUndefinedColumnError } from "@/lib/supabase-postgres-errors";
+import { isValidClientKeyForApi } from "@/lib/client-key-validation";
+import { MAX_AUDIO_UPLOAD_BYTES } from "@/lib/audio-upload-limits";
 
 const BUCKET = "meeting-recordings";
 
@@ -79,7 +81,7 @@ export async function GET(request: Request) {
       if (user) {
         q = q.eq("user_id", user.id);
       } else {
-        if (!clientKey || clientKey.length < 8) {
+        if (!clientKey || clientKey.length < 8 || !isValidClientKeyForApi(clientKey)) {
           return null;
         }
         q = q.eq("client_key", clientKey).is("user_id", null);
@@ -91,7 +93,10 @@ export async function GET(request: Request) {
       "id, created_at, original_filename, mime_type, storage_path, ai_processed_at"
     );
     if (!q1) {
-      return NextResponse.json({ error: "client_key가 필요합니다." }, { status: 400 });
+      return NextResponse.json(
+        { error: "유효한 client_key가 필요합니다." },
+        { status: 400 }
+      );
     }
 
     const first = await q1;
@@ -143,8 +148,14 @@ export async function POST(request: Request) {
     if (!audio || audio.size === 0) {
       return NextResponse.json({ error: "오디오 파일이 없습니다." }, { status: 400 });
     }
-    if (!clientKey || clientKey.length < 8) {
-      return NextResponse.json({ error: "client_key가 필요합니다." }, { status: 400 });
+    if (audio.size > MAX_AUDIO_UPLOAD_BYTES) {
+      return NextResponse.json({ error: "파일이 허용 크기를 초과했습니다." }, { status: 400 });
+    }
+    if (!clientKey || clientKey.length < 8 || !isValidClientKeyForApi(clientKey)) {
+      return NextResponse.json(
+        { error: "유효한 client_key가 필요합니다." },
+        { status: 400 }
+      );
     }
 
     const supabaseAuth = await createClient();
@@ -213,7 +224,6 @@ export async function POST(request: Request) {
     return NextResponse.json({ recording: row });
   } catch (e) {
     console.error(e);
-    const message = e instanceof Error ? e.message : String(e);
-    return NextResponse.json({ error: "서버 오류", details: message }, { status: 500 });
+    return NextResponse.json({ error: "서버 오류" }, { status: 500 });
   }
 }

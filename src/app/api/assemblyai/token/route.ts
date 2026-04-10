@@ -1,8 +1,12 @@
 import { AssemblyAI } from "assemblyai";
 import { NextResponse } from "next/server";
+import { requireAuthenticatedUserForApi } from "@/lib/require-authenticated-user";
 
 export async function GET() {
   try {
+    const auth = await requireAuthenticatedUserForApi();
+    if (!auth.ok) return auth.response;
+
     const apiKey = process.env.ASSEMBLY_API_KEY || process.env.ASSEMBLYAI_API_KEY || "";
     
     // API 키가 없으면 에러
@@ -22,7 +26,7 @@ export async function GET() {
   } catch (error) {
     console.error("Token generation failed:", error);
     return NextResponse.json(
-      { error: "AssemblyAI 토큰을 발급하는 데 실패했습니다.", details: String(error) },
+      { error: "AssemblyAI 토큰을 발급하는 데 실패했습니다." },
       { status: 500 }
     );
   }

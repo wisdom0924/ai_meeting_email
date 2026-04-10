@@ -1,8 +1,12 @@
 import { NextResponse } from "next/server";
 import { analyzeMeetingContent } from "@/lib/gemini-analyze";
+import { requireAuthenticatedUserForApi } from "@/lib/require-authenticated-user";
 
 export async function POST(request: Request) {
   try {
+    const auth = await requireAuthenticatedUserForApi();
+    if (!auth.ok) return auth.response;
+
     const { text, memos, summaryPrompt, detailsPrompt } = await request.json();
 
     if (!text) {

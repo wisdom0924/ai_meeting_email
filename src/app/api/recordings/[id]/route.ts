@@ -5,22 +5,17 @@ import { canAccessMeetingRecording } from "@/lib/meeting-recording-access";
 import { isValidClientKeyForApi } from "@/lib/client-key-validation";
 
 const BUCKET = "meeting-recordings";
-/** 서명 URL 유효 시간(초) — 브라우저에서 재생하기에 충분히 길게 */
-const SIGNED_URL_EXPIRES = 60 * 60;
 
 type RouteContext = { params: Promise<{ id: string }> };
 
 /**
- * GET /api/recordings/[id]/audio?client_key=...
- * 해당 녹음 파일의 임시 재생 URL(JSON)을 돌려줍니다. client_key가 행과 일치할 때만 허용합니다.
+ * DELETE /api/recordings/[id]?client_key=...
+ * DB 행 삭제 후 Storage 오브젝트 제거(실패해도 목록에서는 사라짐).
  */
-export async function GET(request: Request, context: RouteContext) {
+export async function DELETE(request: Request, context: RouteContext) {
   try {
     if (!isSupabaseConfigured()) {
-      return NextResponse.json(
-        { error: "Supabase가 설정되지 않았습니다." },
-        { status: 503 }
-      );
+      return NextResponse.json({ error: "Supabase가 설정되지 않았습니다." }, { status: 503 });
     }
 
     const { searchParams } = new URL(request.url);
@@ -43,7 +38,7 @@ export async function GET(request: Request, context: RouteContext) {
     const supabase = getSupabaseAdmin();
     const { data: row, error: fetchError } = await supabase
       .from("meeting_recordings")
-      .select("id, storage_path, client_key, mime_type, user_id")
+      .select("id, storage_path, client_key, user_id")
       .eq("id", id)
       .maybeSingle();
 
@@ -54,23 +49,21 @@ export async function GET(request: Request, context: RouteContext) {
       return NextResponse.json({ error: "권한이 없습니다." }, { status: 403 });
     }
 
-    const { data: signed, error: signError } = await supabase.storage
-      .from(BUCKET)
-      .createSignedUrl(row.storage_path, SIGNED_URL_EXPIRES);
+    const storagePath = row.storage_path;
 
-    if (signError || !signed?.signedUrl) {
-      console.error("createSignedUrl:", signError);
-      return NextResponse.json(
-        { error: "재생 주소를 만들지 못했습니다." },
-        { status: 500 }
-      );
+    const { error: deleteError } = await supabase.from("meeting_recordings").delete().eq("id", id);
+
+    if (deleteError) {
+      console.error("meeting_recordings delete:", deleteError);
+      return NextResponse.json({ error: "녹음을 삭제하지 못했습니다." }, { status: 500 });
     }
 
-    return NextResponse.json({
-      url: signed.signedUrl,
-      mime_type: row.mime_type,
-      expires_in: SIGNED_URL_EXPIRES,
-    });
+    const { error: storageError } = await supabase.storage.from(BUCKET).remove([storagePath]);
+    if (storageError) {
+      console.warn("meeting-recordings storage remove:", storageError.message);
+    }
+
+    return NextResponse.json({ ok: true });
   } catch (e) {
     console.error(e);
     return NextResponse.json({ error: "서버 오류" }, { status: 500 });

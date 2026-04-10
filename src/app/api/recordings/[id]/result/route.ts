@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { canAccessMeetingRecording } from "@/lib/meeting-recording-access";
 import { isUndefinedColumnError } from "@/lib/supabase-postgres-errors";
 import type { TranscriptBlock } from "@/types";
+import { isValidClientKeyForApi } from "@/lib/client-key-validation";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
@@ -36,6 +37,9 @@ export async function GET(request: Request, context: RouteContext) {
 
     if (!user && (!clientKey || clientKey.length < 8)) {
       return NextResponse.json({ error: "client_key가 필요합니다." }, { status: 400 });
+    }
+    if (!user && clientKey && !isValidClientKeyForApi(clientKey)) {
+      return NextResponse.json({ error: "client_key 형식이 올바르지 않습니다." }, { status: 400 });
     }
 
     const supabase = getSupabaseAdmin();
@@ -111,6 +115,9 @@ export async function PATCH(request: Request, context: RouteContext) {
 
     if (!user && (!clientKey || clientKey.length < 8)) {
       return NextResponse.json({ error: "client_key가 필요합니다." }, { status: 400 });
+    }
+    if (!user && clientKey && !isValidClientKeyForApi(clientKey)) {
+      return NextResponse.json({ error: "client_key 형식이 올바르지 않습니다." }, { status: 400 });
     }
 
     if (!isTranscriptBlocks(transcriptBlocks)) {

@@ -45,7 +45,7 @@ export default function CloudRecordingsPanel({
   const [disabledReason, setDisabledReason] = useState<string | null>(null);
   const [processing, setProcessing] = useState<{
     id: string;
-    kind: "load" | "analyze";
+    kind: "load" | "analyze" | "delete";
   } | null>(null);
   /** 서버에서 받은 임시 재생 URL (같은 항목에서 '닫기'로 끔) */
   const [audioPreview, setAudioPreview] = useState<{
@@ -111,6 +111,13 @@ export default function CloudRecordingsPanel({
         summary: data.summary || "",
         details: data.details ?? null,
       });
+      if (data.persisted === false) {
+        alert(
+          typeof data.persistMessage === "string"
+            ? data.persistMessage
+            : "서버에 분석 결과를 저장하지 못했어요. 그래서 「AI 분석 불러오기」가 켜지지 않을 수 있어요."
+        );
+      }
       void load();
     } catch {
       alert("다시 분석 중 오류가 났어요.");
@@ -142,7 +149,43 @@ export default function CloudRecordingsPanel({
         details: data.details ?? null,
       });
     } catch {
-      alert("불러오기 중 오류가 났어요.");
+      alert("AI 분석 불러오기 중 오류가 났어요.");
+    } finally {
+      setProcessing(null);
+      onBusyChange?.(false);
+    }
+  };
+
+  const handleDelete = async (r: CloudRecordingRow) => {
+    if (
+      !confirm(
+        `이 녹음을 삭제할까요?\n${r.original_filename || "녹음 파일"}\n삭제하면 복구할 수 없어요.`
+      )
+    ) {
+      return;
+    }
+    setProcessing({ id: r.id, kind: "delete" });
+    onBusyChange?.(true);
+    try {
+      const res = await fetch(
+        `/api/recordings/${encodeURIComponent(r.id)}?client_key=${encodeURIComponent(clientKey)}`,
+        { method: "DELETE" }
+      );
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        alert(
+          typeof data.error === "string"
+            ? data.error
+            : "삭제하지 못했어요."
+        );
+        return;
+      }
+      if (audioPreview?.id === r.id) {
+        setAudioPreview(null);
+      }
+      void load();
+    } catch {
+      alert("삭제 중 오류가 났어요.");
     } finally {
       setProcessing(null);
       onBusyChange?.(false);
@@ -225,6 +268,11 @@ export default function CloudRecordingsPanel({
           새로고침
         </button>
       </div>
+      <p className="text-[11px] text-gray-500 leading-snug mb-2">
+        「AI 분석 불러오기」는 이 녹음에 대해{" "}
+        <strong className="font-medium text-gray-700">AI 분석이 한 번이라도 끝나고 서버에 저장된 뒤</strong>에
+        켜져요. 아직 없으면 같은 줄에서 「AI로 분석」을 먼저 눌러 주세요.
+      </p>
       {error && (
         <p className="text-xs text-red-600 mb-2">{error}</p>
       )}
@@ -275,18 +323,25 @@ export default function CloudRecordingsPanel({
                         ? "닫기"
                         : "듣기"}
                   </button>
-                  {r.ai_processed_at ? (
-                    <button
-                      type="button"
-                      disabled={processing !== null}
-                      onClick={() => void handleLoadCached(r.id)}
-                      className="rounded-lg bg-gray-900 px-2 py-1 text-[11px] font-medium text-white disabled:opacity-50"
-                    >
-                      {processing?.id === r.id && processing.kind === "load"
-                        ? "불러오는 중…"
-                        : "불러오기"}
-                    </button>
-                  ) : null}
+                  <button
+                    type="button"
+                    disabled={processing !== null || !r.ai_processed_at}
+                    onClick={() => void handleLoadCached(r.id)}
+                    title={
+                      r.ai_processed_at
+                        ? "서버에 저장된 AI 분석(요약·회의록)을 화면에 다시 불러옵니다"
+                        : "먼저 오른쪽 「AI로 분석」을 끝내면, 다음부터 여기서 저장된 AI 분석을 불러올 수 있어요"
+                    }
+                    className={`rounded-lg px-2 py-1 text-[11px] font-medium disabled:opacity-50 ${
+                      r.ai_processed_at
+                        ? "bg-gray-900 text-white"
+                        : "border border-dashed border-gray-300 bg-gray-50 text-gray-400 cursor-not-allowed"
+                    }`}
+                  >
+                    {processing?.id === r.id && processing.kind === "load"
+                      ? "불러오는 중…"
+                      : "AI 분석 불러오기"}
+                  </button>
                   <button
                     type="button"
                     disabled={processing !== null}
@@ -302,6 +357,17 @@ export default function CloudRecordingsPanel({
                       : r.ai_processed_at
                         ? "다시 분석"
                         : "AI로 분석"}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={processing !== null}
+                    onClick={() => void handleDelete(r)}
+                    title="이 녹음과 클라우드 파일을 삭제합니다"
+                    className="rounded-lg border border-red-200 bg-white px-2 py-1 text-[11px] font-medium text-red-700 hover:bg-red-50 disabled:opacity-50"
+                  >
+                    {processing?.id === r.id && processing.kind === "delete"
+                      ? "삭제 중…"
+                      : "삭제"}
                   </button>
                 </div>
               </div>
