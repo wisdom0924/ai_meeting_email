@@ -1,14 +1,24 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import {
+  useState,
+  useEffect,
+  useRef,
+  useMemo,
+  useCallback,
+} from "react";
 import { TranscriptBlock, Memo } from "@/types";
 import Header from "@/components/Header";
 import RecordPanel from "@/components/RecordPanel";
+import RecordingHistoryModal from "@/components/RecordingHistoryModal";
 import TranscriptPanel from "@/components/TranscriptPanel";
 import EmailRecipientPanel, {
   type EmailRecipientPanelHandle,
 } from "@/components/EmailRecipientPanel";
 import { withDefaultMeetingDateTime } from "@/lib/meeting-details-defaults";
+import { getOrCreateRecordingClientKey } from "@/lib/recording-client-key";
+import { createClient } from "@/lib/supabase/client";
+import { isSupabaseBrowserConfigured } from "@/lib/supabase/env";
 import {
   deepStripBasicMarkdown,
   stripBasicMarkdown,
@@ -32,6 +42,72 @@ export default function Home() {
   const [summary, setSummary] = useState(""); // 500자 요약 데이터 상태 저장공간 추가
   const [details, setDetails] = useState<any>(null); // 상세 회의록 데이터 상태 추가
   const [isSending, setIsSending] = useState(false); // 웹훅 전송 상태 추가
+
+  /** SSR 시에는 비어 있다가, 클라이언트에서만 localStorage 기반 키로 채움 */
+  const [recordingClientKey, setRecordingClientKey] = useState("");
+  const [cloudListVersion, setCloudListVersion] = useState(0);
+  const [promptListVersion, setPromptListVersion] = useState(0);
+  const [promptSnapshot, setPromptSnapshot] = useState<{
+    summary: string | null;
+    details: string | null;
+  }>({ summary: null, details: null });
+  const [cloudProcessing, setCloudProcessing] = useState(false);
+  const [recordingHistoryOpen, setRecordingHistoryOpen] = useState(false);
+
+  const handleActivePromptsChange = useCallback(
+    (summary: string | null, details: string | null) => {
+      setPromptSnapshot({ summary, details });
+    },
+    []
+  );
+
+  const recordingClientKeyRef = useRef("");
+  useEffect(() => {
+    recordingClientKeyRef.current = recordingClientKey;
+  }, [recordingClientKey]);
+
+  useEffect(() => {
+    if (!isSupabaseBrowserConfigured()) {
+      setRecordingClientKey(getOrCreateRecordingClientKey(null));
+      return;
+    }
+    const supabase = createClient();
+    let unsub: (() => void) | undefined;
+    const init = async () => {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      const uid = session?.user?.id ?? null;
+      setRecordingClientKey(getOrCreateRecordingClientKey(uid));
+      setCloudListVersion((v) => v + 1);
+      const { data } = supabase.auth.onAuthStateChange((_event, session) => {
+        const next = session?.user?.id ?? null;
+        setRecordingClientKey(getOrCreateRecordingClientKey(next));
+        setCloudListVersion((v) => v + 1);
+      });
+      unsub = () => data.subscription.unsubscribe();
+    };
+    void init();
+    return () => {
+      unsub?.();
+    };
+  }, []);
+
+  useEffect(() => {
+    setPromptSnapshot({
+      summary: localStorage.getItem("summaryPrompt"),
+      details: localStorage.getItem("detailsPrompt"),
+    });
+  }, []);
+
+  const memosForAi = useMemo(
+    () =>
+      memos
+        .filter((m) => m.type !== "system")
+        .map((m) => `[${m.time}] ${m.text}`)
+        .join("\n"),
+    [memos]
+  );
 
   const emailRecipientsRef = useRef<EmailRecipientPanelHandle>(null);
 
@@ -104,6 +180,53 @@ export default function Home() {
           
           const audioBlob = new Blob(audioChunksRef.current, { type: mimeType });
           const audioUrl = URL.createObjectURL(audioBlob);
+
+          const clientKeyForCloud = recordingClientKeyRef.current;
+          if (clientKeyForCloud && clientKeyForCloud.length >= 8) {
+            const uploadForm = new FormData();
+            uploadForm.append("audio", audioBlob, `recording.${fileExtension}`);
+            uploadForm.append("client_key", clientKeyForCloud);
+            uploadForm.append(
+              "original_filename",
+              `recording.${fileExtension}`
+            );
+            void fetch("/api/recordings", { method: "POST", body: uploadForm })
+              .then(async (res) => {
+                if (res.ok) {
+                  setCloudListVersion((v) => v + 1);
+                  return;
+                }
+                const text = await res.text();
+                let parsed: Record<string, unknown> = {};
+                try {
+                  parsed = text ? (JSON.parse(text) as Record<string, unknown>) : {};
+                } catch {
+                  parsed = { raw: text };
+                }
+                console.error("[클라우드 녹음] 업로드 실패:", res.status, parsed);
+              })
+              .catch((e) => {
+                console.error("[클라우드 녹음] 업로드 요청 오류:", e);
+              });
+
+            const snapSummary = localStorage.getItem("summaryPrompt") ?? "";
+            const snapDetails = localStorage.getItem("detailsPrompt") ?? "";
+            void fetch("/api/prompts", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                name: `녹음 ${new Date().toLocaleString("ko-KR")}`,
+                summary_prompt: snapSummary,
+                details_prompt: snapDetails,
+                client_key: clientKeyForCloud,
+                source: "recording_end",
+              }),
+            })
+              .then((res) => {
+                if (res.ok) setPromptListVersion((v) => v + 1);
+              })
+              .catch(() => {});
+          }
           
           const now = new Date();
           setMemos((prev) => [
@@ -497,26 +620,65 @@ export default function Home() {
   return (
     <div className="flex flex-col min-h-screen bg-gray-50 text-gray-900 font-sans">
       {/* 1. 상단 제목 부분 */}
-      <Header onRefresh={handleRefresh} onSendExternal={handleSendExternal} isSending={isSending} />
+      <Header
+        onRefresh={handleRefresh}
+        onSendExternal={handleSendExternal}
+        isSending={isSending}
+        onRecordingHistory={() => setRecordingHistoryOpen(true)}
+        clientKey={recordingClientKey}
+        promptsRefreshVersion={promptListVersion}
+        onActivePromptsChange={handleActivePromptsChange}
+      />
+
+      <RecordingHistoryModal
+        open={recordingHistoryOpen}
+        onClose={() => setRecordingHistoryOpen(false)}
+        clientKey={recordingClientKey}
+        refreshVersion={cloudListVersion}
+        memosForAi={memosForAi}
+        summaryPrompt={promptSnapshot.summary}
+        detailsPrompt={promptSnapshot.details}
+        onBusyChange={setCloudProcessing}
+        onProcessed={({ transcriptBlocks, summary: nextSummary, details: nextDetails }) => {
+          setRecordingHistoryOpen(false);
+          setFullTranscript(transcriptBlocks);
+          setSummary(nextSummary || "");
+          setDetails(
+            nextDetails != null
+              ? withDefaultMeetingDateTime(nextDetails)
+              : null
+          );
+          setTranscript("");
+        }}
+      />
 
       <main className="flex flex-col md:flex-row flex-1 overflow-hidden p-4 md:p-6 gap-6">
         {/* 2. 왼쪽: 녹음 버튼과 메모장 부분 */}
-        <div className="w-full md:w-[380px] lg:w-[420px] flex-shrink-0 bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden flex flex-col h-full">
-          <RecordPanel 
-            isRecording={isRecording}
-            recordingTime={recordingTime}
-            onToggleRecord={handleToggleRecord}
-            memos={memos}
-            onAddMemo={handleAddMemo}
-            audioLevel={audioLevel}
-          />
+        <div className="w-full md:w-[380px] lg:w-[420px] flex-shrink-0 bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden flex flex-col h-full min-h-0">
+          <div className="flex-1 min-h-0 overflow-y-auto flex flex-col">
+            <RecordPanel 
+              isRecording={isRecording}
+              recordingTime={recordingTime}
+              onToggleRecord={handleToggleRecord}
+              memos={memos}
+              onAddMemo={handleAddMemo}
+              audioLevel={audioLevel}
+            />
+            <div className="p-4 border-t border-gray-100 shrink-0">
+              <p className="text-xs text-gray-500 leading-relaxed">
+                녹음이 끝나면 파일이 클라우드에 저장돼요. 과거 녹음은 오른쪽 위
+                <span className="font-medium text-gray-700"> 히스토리 </span>
+                버튼에서 볼 수 있어요.
+              </p>
+            </div>
+          </div>
         </div>
         
         {/* 3. 오른쪽: AI가 작성해주는 회의록 부분 */}
         <div className="flex-1 bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden flex flex-col h-full min-w-0">
           <TranscriptPanel 
             isRecording={isRecording}
-            isTranscribing={isTranscribing}
+            isTranscribing={isTranscribing || cloudProcessing}
             transcript={transcript}
             fullTranscript={fullTranscript}
             summary={summary}
