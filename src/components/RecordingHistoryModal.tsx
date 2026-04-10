@@ -45,7 +45,7 @@ export default function RecordingHistoryModal({
         onClick={onClose}
       />
       <div
-        className="relative z-[1] flex w-full max-w-lg max-h-[85vh] flex-col overflow-hidden rounded-xl border border-gray-200 bg-white shadow-2xl"
+        className="relative z-[1] flex w-full max-w-3xl max-h-[85vh] flex-col overflow-hidden rounded-xl border border-gray-200 bg-white shadow-2xl"
         role="dialog"
         aria-modal="true"
         aria-labelledby="recording-history-title"
