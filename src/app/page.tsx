@@ -23,6 +23,7 @@ import {
   deepStripBasicMarkdown,
   stripBasicMarkdown,
 } from "@/lib/strip-markdown";
+import { recordEmailsAsFavorites } from "@/lib/user-email-favorites";
 import { MAX_AUDIO_UPLOAD_BYTES } from "@/lib/audio-upload-limits";
 
 export default function Home() {
@@ -731,6 +732,11 @@ export default function Home() {
 
       if (response.ok) {
         alert("데이터가 성공적으로 전송되었습니다.");
+        if (isSupabaseBrowserConfigured()) {
+          const supabase = createClient();
+          await recordEmailsAsFavorites(supabase, [...emailTo, ...emailCc]);
+          emailRecipientsRef.current?.refreshEmailFavorites();
+        }
       } else {
         alert("데이터 전송에 실패했습니다.");
       }
