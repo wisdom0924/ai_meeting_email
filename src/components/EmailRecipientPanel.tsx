@@ -65,6 +65,8 @@ type RecipientFieldProps = {
   value: string;
   onChange: (next: string) => void;
   favorites: string[];
+  /** 맨 아래 줄 등에서 목록이 잘리지 않게 입력란 위로 펼칩니다 */
+  suggestionsOpenUpward?: boolean;
 };
 
 function RecipientField({
@@ -76,6 +78,7 @@ function RecipientField({
   value,
   onChange,
   favorites,
+  suggestionsOpenUpward = false,
 }: RecipientFieldProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [open, setOpen] = useState(false);
@@ -163,7 +166,11 @@ function RecipientField({
           <ul
             id={suggestionListId}
             role="listbox"
-            className="absolute left-0 right-0 top-full z-20 mt-1 max-h-48 overflow-y-auto rounded-lg border border-gray-200 bg-white py-1 text-sm shadow-lg"
+            className={`absolute left-0 right-0 z-50 max-h-48 overflow-y-auto rounded-lg border border-gray-200 bg-white py-1 text-sm shadow-lg ${
+              suggestionsOpenUpward
+                ? "bottom-full mb-1"
+                : "top-full mt-1"
+            }`}
           >
             {matches.map((email, idx) => (
               <li key={email} role="presentation">
@@ -269,7 +276,7 @@ const EmailRecipientPanel = forwardRef<
         : null;
 
   return (
-    <section className="rounded-2xl border border-gray-200 bg-white shadow-sm overflow-hidden">
+    <section className="rounded-2xl border border-gray-200 bg-white shadow-sm">
       <header className="px-4 py-3.5 border-b border-gray-200 bg-gradient-to-r from-slate-50 to-white">
         <h2 className="text-base font-semibold text-gray-900 tracking-tight">
           이메일 받는 사람
@@ -294,6 +301,7 @@ const EmailRecipientPanel = forwardRef<
             value={toText}
             onChange={setToText}
             favorites={favorites}
+            suggestionsOpenUpward
           />
         </div>
 
@@ -307,6 +315,7 @@ const EmailRecipientPanel = forwardRef<
             value={ccText}
             onChange={setCcText}
             favorites={favorites}
+            suggestionsOpenUpward
           />
         </div>
       </div>
