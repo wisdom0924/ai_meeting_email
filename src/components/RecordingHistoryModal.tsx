@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
-import CloudRecordingsPanel from "@/components/CloudRecordingsPanel";
+import ServerRecordingsPanel from "@/components/ServerRecordingsPanel";
 import type { TranscriptBlock } from "@/types";
 
 type RecordingHistoryModalProps = {
@@ -80,7 +80,7 @@ export default function RecordingHistoryModal({
           </button>
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto p-4">
-          <CloudRecordingsPanel {...panelProps} variant="dialog" />
+          <ServerRecordingsPanel {...panelProps} variant="dialog" />
         </div>
       </div>
     </div>

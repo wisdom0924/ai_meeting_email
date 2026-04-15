@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { DEFAULT_SUMMARY_PROMPT, DEFAULT_DETAILS_PROMPT } from "@/lib/prompts";
-import PromptsCloudSection from "@/components/PromptsCloudSection";
+import PromptsServerSection from "@/components/PromptsServerSection";
 import type { PromptRow } from "@/lib/prompt-row";
 import { isSupabaseBrowserConfigured } from "@/lib/supabase/env";
 import { createClient } from "@/lib/supabase/client";
@@ -13,7 +13,7 @@ export interface HeaderProps {
   onRefresh?: () => void;
   onSendExternal?: () => void;
   isSending?: boolean;
-  /** 클라우드에 올린 과거 녹음 목록 모달 */
+  /** 서버에 올린 과거 녹음 목록 모달 */
   onRecordingHistory?: () => void;
   /** Supabase 프롬프트 목록·저장용(브라우저 client_key). 없으면 예전처럼 로컬만 사용 */
   clientKey?: string;
@@ -32,11 +32,12 @@ export default function Header({
   onActivePromptsChange,
 }: HeaderProps) {
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isGuideOpen, setIsGuideOpen] = useState(false);
   const [summaryPrompt, setSummaryPrompt] = useState("");
   const [detailsPrompt, setDetailsPrompt] = useState("");
   const [promptName, setPromptName] = useState("");
 
-  const [cloudEnabled, setCloudEnabled] = useState(false);
+  const [serverEnabled, setServerEnabled] = useState(false);
   const [promptList, setPromptList] = useState<PromptRow[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [loadingList, setLoadingList] = useState(false);
@@ -119,9 +120,9 @@ export default function Header({
     [onActivePromptsChange]
   );
 
-  const loadPromptsFromCloud = useCallback(async () => {
+  const loadPromptsFromServer = useCallback(async () => {
     if (!clientKey || clientKey.length < 8) {
-      setCloudEnabled(false);
+      setServerEnabled(false);
       applyLocalDefaults();
       return;
     }
@@ -131,17 +132,17 @@ export default function Header({
         `/api/prompts?client_key=${encodeURIComponent(clientKey)}`
       );
       if (res.status === 503) {
-        setCloudEnabled(false);
+        setServerEnabled(false);
         applyLocalDefaults();
         return;
       }
       const data = await res.json();
       if (!res.ok) {
-        setCloudEnabled(false);
+        setServerEnabled(false);
         applyLocalDefaults();
         return;
       }
-      setCloudEnabled(true);
+      setServerEnabled(true);
       const list = (data.prompts || []) as PromptRow[];
       setPromptList(list);
       const savedId = localStorage.getItem(SELECTED_PROMPT_ID_KEY);
@@ -154,7 +155,7 @@ export default function Header({
         applyLocalDefaults();
       }
     } catch {
-      setCloudEnabled(false);
+      setServerEnabled(false);
       applyLocalDefaults();
     } finally {
       setLoadingList(false);
@@ -162,11 +163,11 @@ export default function Header({
   }, [clientKey, applyLocalDefaults, applyRow]);
 
   useEffect(() => {
-    void loadPromptsFromCloud();
-  }, [loadPromptsFromCloud, promptsRefreshVersion]);
+    void loadPromptsFromServer();
+  }, [loadPromptsFromServer, promptsRefreshVersion]);
 
   useEffect(() => {
-    if (!cloudEnabled) {
+    if (!serverEnabled) {
       const savedSummary = localStorage.getItem("summaryPrompt");
       const savedDetails = localStorage.getItem("detailsPrompt");
       const isOldJsonFormat = savedDetails?.includes("JSON 형식이어야 합니다");
@@ -175,14 +176,14 @@ export default function Header({
         isOldJsonFormat ? DEFAULT_DETAILS_PROMPT : savedDetails || DEFAULT_DETAILS_PROMPT
       );
     }
-  }, [cloudEnabled]);
+  }, [serverEnabled]);
 
   const handleSave = async () => {
     localStorage.setItem("summaryPrompt", summaryPrompt);
     localStorage.setItem("detailsPrompt", detailsPrompt);
     onActivePromptsChange?.(summaryPrompt, detailsPrompt);
 
-    if (cloudEnabled && clientKey) {
+    if (serverEnabled && clientKey) {
       setSaving(true);
       try {
         if (!selectedId) {
@@ -202,7 +203,7 @@ export default function Header({
             alert(data.error || "저장에 실패했어요.");
             return;
           }
-          await loadPromptsFromCloud();
+          await loadPromptsFromServer();
           if (data.prompt) applyRow(data.prompt as PromptRow);
         } else {
           const res = await fetch(`/api/prompts/${selectedId}`, {
@@ -220,7 +221,7 @@ export default function Header({
             alert(data.error || "저장에 실패했어요.");
             return;
           }
-          await loadPromptsFromCloud();
+          await loadPromptsFromServer();
           if (data.prompt) applyRow(data.prompt as PromptRow);
         }
       } catch {
@@ -245,7 +246,7 @@ export default function Header({
   };
 
   const handleNewPrompt = async () => {
-    if (!cloudEnabled || !clientKey) return;
+    if (!serverEnabled || !clientKey) return;
     setSaving(true);
     try {
       const res = await fetch("/api/prompts", {
@@ -264,7 +265,7 @@ export default function Header({
         alert(data.error || "만들지 못했어요.");
         return;
       }
-      await loadPromptsFromCloud();
+      await loadPromptsFromServer();
       if (data.prompt) applyRow(data.prompt as PromptRow);
     } catch {
       alert("만들기 중 오류가 났어요.");
@@ -274,7 +275,7 @@ export default function Header({
   };
 
   const handleDeletePrompt = async () => {
-    if (!cloudEnabled || !selectedId || !clientKey) return;
+    if (!serverEnabled || !selectedId || !clientKey) return;
     const row = promptList.find((p) => p.id === selectedId);
     if (!row || row.source === "seed") return;
     if (!window.confirm(`"${row.name}" 프롬프트를 삭제할까요?`)) return;
@@ -289,7 +290,7 @@ export default function Header({
         alert(data.error || "삭제하지 못했어요.");
         return;
       }
-      await loadPromptsFromCloud();
+      await loadPromptsFromServer();
     } catch {
       alert("삭제 중 오류가 났어요.");
     } finally {
@@ -307,6 +308,30 @@ export default function Header({
           <h1 className="text-xl font-bold tracking-tight text-gray-900">AI MEETING</h1>
         </div>
         <div className="flex items-center gap-2 sm:gap-4">
+          <button
+            type="button"
+            onClick={() => setIsGuideOpen(true)}
+            className="p-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors flex items-center justify-center"
+            title="사용방법"
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden
+            >
+              <circle cx="12" cy="12" r="10" />
+              <path d="M9.09 9a3 3 0 1 1 5.82 1c0 2-3 2-3 4" />
+              <line x1="12" y1="17" x2="12.01" y2="17" />
+            </svg>
+            <span className="hidden sm:inline ml-1.5 text-xs font-medium">사용방법</span>
+          </button>
           {onRecordingHistory && (
             <button
               type="button"
@@ -405,9 +430,9 @@ export default function Header({
                 <p>요약본과 상세 회의록 각각에 대해 AI에게 어떤 식으로 작성할지 알려주세요.</p>
               </div>
 
-              {cloudEnabled && (
+              {serverEnabled && (
                 <div className="flex flex-col md:flex-row gap-4">
-                  <PromptsCloudSection
+                  <PromptsServerSection
                     items={promptList}
                     selectedId={selectedId}
                     loadingList={loadingList}
@@ -449,7 +474,7 @@ export default function Header({
                 </div>
               )}
 
-              {!cloudEnabled && (
+              {!serverEnabled && (
                 <>
                   <div className="flex flex-col gap-2">
                     <label className="font-bold text-gray-900 text-sm">요약 프롬프트 (Summary)</label>
@@ -471,7 +496,7 @@ export default function Header({
                   </div>
                   <p className="text-xs text-amber-800 bg-amber-50 rounded-lg px-3 py-2">
                     Supabase가 연결되지 않았을 때는 이 기기 안에만 저장돼요. 서버에
-                    SUPABASE_SERVICE_ROLE_KEY 등을 넣으면 목록·클라우드 저장을 쓸 수
+                    SUPABASE_SERVICE_ROLE_KEY 등을 넣으면 목록·서버 저장을 쓸 수
                     있어요.
                   </p>
                 </>
@@ -500,6 +525,87 @@ export default function Header({
                   {saving ? "저장 중…" : "저장하기"}
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {isGuideOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+          <div className="w-full max-w-2xl max-h-[90vh] overflow-hidden rounded-xl bg-white shadow-2xl flex flex-col">
+            <div className="flex items-center justify-between border-b border-gray-100 bg-gray-50 p-5">
+              <h2 className="text-lg font-bold text-gray-900">사용방법</h2>
+              <button
+                type="button"
+                onClick={() => setIsGuideOpen(false)}
+                className="text-gray-400 hover:text-gray-900"
+                aria-label="사용방법 닫기"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+              </button>
+            </div>
+
+            <div className="overflow-y-auto p-5 text-sm text-gray-700 space-y-4 leading-relaxed">
+              <section className="rounded-lg border border-gray-100 bg-gray-50 p-4">
+                <h3 className="font-semibold text-gray-900">0. 시작 전에 먼저</h3>
+                <ul className="mt-2 list-disc pl-5 space-y-1 text-xs text-gray-600">
+                  <li>브라우저에서 마이크 권한을 허용해 주세요.</li>
+                  <li>회의가 끝난 뒤에는 분석 버튼을 눌러야 요약/회의록이 만들어져요.</li>
+                  <li>결과를 다시 보고 싶으면 히스토리에서 같은 녹음을 선택하면 돼요.</li>
+                </ul>
+              </section>
+
+              <section className="rounded-lg border border-gray-100 p-4">
+                <h3 className="font-semibold text-gray-900">1-1. 직접 녹음하기</h3>
+                <ol className="mt-2 list-decimal pl-5 space-y-1">
+                  <li>녹음 시작 버튼을 눌러요.</li>
+                  <li>회의가 끝나면 녹음을 종료해요.</li>
+                  <li>화면에 생긴 항목에서 AI 분석 버튼을 눌러요.</li>
+                  <li>잠시 기다리면 요약본과 상세 회의록이 자동으로 채워져요.</li>
+                </ol>
+              </section>
+
+              <section className="rounded-lg border border-gray-100 p-4">
+                <h3 className="font-semibold text-gray-900">1-2. 녹음한 파일 올리기</h3>
+                <ol className="mt-2 list-decimal pl-5 space-y-1">
+                  <li>파일 업로드 버튼으로 녹음 파일을 선택해요.</li>
+                  <li>업로드가 끝나면 목록에 파일이 보여요.</li>
+                  <li>그 줄에서 AI 분석 버튼을 눌러 결과를 만들어요.</li>
+                  <li>이후에는 히스토리에서 AI 분석 불러오기로 다시 꺼내 볼 수 있어요.</li>
+                </ol>
+              </section>
+
+              <section className="rounded-lg border border-gray-100 p-4">
+                <h3 className="font-semibold text-gray-900">1-3. 채팅창(메모창) 기능</h3>
+                <ol className="mt-2 list-decimal pl-5 space-y-1">
+                  <li>왼쪽 아래 입력칸에 중요한 말을 짧게 적어요.</li>
+                  <li>전송 버튼(종이비행기)을 누르면 메모가 말풍선처럼 쌓여요.</li>
+                  <li>이 메모는 AI가 요약할 때 참고해서 더 정확한 회의록을 만들어요.</li>
+                  <li>한 줄에 한 가지씩 적으면 나중에 읽기 쉬워요.</li>
+                </ol>
+              </section>
+
+              <section className="rounded-lg border border-blue-100 bg-blue-50 p-4">
+                <h3 className="font-semibold text-gray-900">2. 이메일 전송 방법</h3>
+                <ol className="mt-2 list-decimal pl-5 space-y-1 text-gray-700">
+                  <li>먼저 AI 분석이 끝났는지 확인해요.</li>
+                  <li>
+                    화면 아래쪽 이메일 영역에서 받는 사람·참조 주소를 적거나
+                    확인해요. (요약·회의록은 위쪽에 보여요.)
+                  </li>
+                  <li>오른쪽 위 전송(종이비행기) 버튼을 눌러요.</li>
+                  <li>전송이 끝나면 뜨는 안내 창을 확인해요.</li>
+                </ol>
+              </section>
+
+              <section className="rounded-lg border border-amber-100 bg-amber-50 p-4">
+                <h3 className="font-semibold text-gray-900">자주 막히는 경우</h3>
+                <ul className="mt-2 list-disc pl-5 space-y-1 text-xs text-amber-900">
+                  <li>목록이 비어 있으면 새로고침을 눌러 다시 불러와 보세요.</li>
+                  <li>분석 불러오기가 비활성화면, 그 녹음을 아직 분석하지 않은 상태예요.</li>
+                  <li>오류가 계속 뜨면 잠시 후 다시 시도하거나 인터넷 연결을 확인해 주세요.</li>
+                </ul>
+              </section>
             </div>
           </div>
         </div>

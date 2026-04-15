@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import type { TranscriptBlock } from "@/types";
 
-export type CloudRecordingRow = {
+export type ServerRecordingRow = {
   id: string;
   created_at: string;
   original_filename: string | null;
@@ -13,7 +13,7 @@ export type CloudRecordingRow = {
   ai_processed_at: string | null;
 };
 
-type CloudRecordingsPanelProps = {
+type ServerRecordingsPanelProps = {
   clientKey: string;
   refreshVersion: number;
   memosForAi: string;
@@ -29,7 +29,7 @@ type CloudRecordingsPanelProps = {
   variant?: "inline" | "dialog";
 };
 
-export default function CloudRecordingsPanel({
+export default function ServerRecordingsPanel({
   clientKey,
   refreshVersion,
   memosForAi,
@@ -38,8 +38,8 @@ export default function CloudRecordingsPanel({
   onProcessed,
   onBusyChange,
   variant = "inline",
-}: CloudRecordingsPanelProps) {
-  const [items, setItems] = useState<CloudRecordingRow[]>([]);
+}: ServerRecordingsPanelProps) {
+  const [items, setItems] = useState<ServerRecordingRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [disabledReason, setDisabledReason] = useState<string | null>(null);
@@ -66,7 +66,7 @@ export default function CloudRecordingsPanel({
       if (!res.ok) {
         if (res.status === 503) {
           setDisabledReason(
-            "클라우드 저장을 쓰려면 서버에 Supabase 설정이 필요해요."
+            "녹음을 서버에 모아 두는 기능을 쓰려면, 먼저 서버 연결 설정이 필요해요."
           );
           setItems([]);
           return;
@@ -115,7 +115,7 @@ export default function CloudRecordingsPanel({
         alert(
           typeof data.persistMessage === "string"
             ? data.persistMessage
-            : "서버에 분석 결과를 저장하지 못했어요. 그래서 「AI 분석 불러오기」가 켜지지 않을 수 있어요."
+            : "분석 결과를 서버에 저장하지 못했어요. 그래서 「AI 분석 불러오기」 버튼이 켜지지 않을 수 있어요."
         );
       }
       void load();
@@ -149,14 +149,14 @@ export default function CloudRecordingsPanel({
         details: data.details ?? null,
       });
     } catch {
-      alert("AI 분석 불러오기 중 오류가 났어요.");
+      alert("저장해 둔 AI 분석을 불러오는 중에 오류가 났어요.");
     } finally {
       setProcessing(null);
       onBusyChange?.(false);
     }
   };
 
-  const handleDelete = async (r: CloudRecordingRow) => {
+  const handleDelete = async (r: ServerRecordingRow) => {
     if (
       !confirm(
         `이 녹음을 삭제할까요?\n${r.original_filename || "녹음 파일"}\n삭제하면 복구할 수 없어요.`
@@ -192,7 +192,7 @@ export default function CloudRecordingsPanel({
     }
   };
 
-  const toggleListen = async (r: CloudRecordingRow) => {
+  const toggleListen = async (r: ServerRecordingRow) => {
     if (audioPreview?.id === r.id) {
       setAudioPreview(null);
       return;
@@ -251,43 +251,49 @@ export default function CloudRecordingsPanel({
 
   return (
     <div className={shellClass}>
-      <div className="flex items-center justify-between gap-2 mb-2">
-        {variant === "inline" ? (
-          <h3 className="text-sm font-medium text-gray-800">클라우드에 저장된 녹음</h3>
-        ) : (
-          <p className="text-xs text-gray-500">
-            이 브라우저에서 올린 녹음만 보여요.
-          </p>
-        )}
-        <button
-          type="button"
-          onClick={() => void load()}
-          className="text-xs text-gray-500 hover:text-gray-800 underline shrink-0"
-          disabled={loading}
-        >
-          새로고침
-        </button>
-      </div>
-      <p className="text-[11px] text-gray-500 leading-snug mb-2">
-        「AI 분석 불러오기」는 이 녹음에 대해{" "}
-        <strong className="font-medium text-gray-700">AI 분석이 한 번이라도 끝나고 서버에 저장된 뒤</strong>에
-        켜져요. 아직 없으면 같은 줄에서 「AI로 분석」을 먼저 눌러 주세요.
-      </p>
-      {error && (
-        <p className="text-xs text-red-600 mb-2">{error}</p>
-      )}
-      {loading && items.length === 0 ? (
-        <p className="text-xs text-gray-500">불러오는 중…</p>
-      ) : items.length === 0 ? (
-        <div className="space-y-1 text-xs text-gray-500">
-          <p>아직 여기에 보이는 녹음이 없어요.</p>
-          <p className="text-[11px] text-gray-400 leading-relaxed">
-            이 목록에는 <strong className="font-medium text-gray-600">인터넷 저장소(Supabase)에 성공적으로 올라간 녹음</strong>만
-            나와요. 녹음을 끝냈는데도 비어 있으면 업로드가 실패한 경우가 많아요.
-            (원인 확인: 브라우저에서 F12 → Console 탭에 빨간 글씨가 있는지 봐 주세요.)
-          </p>
+      <div className="pb-3 border-b border-gray-200/90">
+        <div className="flex items-center justify-between gap-2 mb-2">
+          {variant === "inline" ? (
+            <h3 className="text-sm font-medium text-gray-800">서버에 저장된 녹음</h3>
+          ) : (
+            <p className="text-xs text-gray-500">
+              서버로 올린 녹음만 여기에 나와요.
+            </p>
+          )}
+          <button
+            type="button"
+            onClick={() => void load()}
+            className="text-xs text-gray-500 hover:text-gray-800 underline shrink-0"
+            disabled={loading}
+          >
+            새로고침
+          </button>
         </div>
-      ) : (
+        <p className="text-[11px] text-gray-500 leading-snug">
+          「AI 분석 불러오기」는{" "}
+          <strong className="font-medium text-gray-700">이미 한 번 분석해서 결과가 저장된 뒤</strong>에만
+          눌 수 있어요. 처음이면 같은 줄의 「AI로 분석」을 먼저 눌러 주세요.
+        </p>
+      </div>
+
+      <div className="pt-3">
+        {error && (
+          <p className="text-xs text-red-600 mb-2">{error}</p>
+        )}
+        {loading && items.length === 0 ? (
+          <p className="text-xs text-gray-500">불러오는 중…</p>
+        ) : items.length === 0 ? (
+          <div className="rounded-lg border border-gray-100 bg-gray-50/90 space-y-2">
+            <p className="text-xs font-medium text-gray-700">아직 여기에 보이는 녹음이 없어요.</p>
+            <p className="text-[11px] text-gray-500 leading-relaxed">
+              여기에는 <strong className="font-medium text-gray-600">서버에 잘 올라간 녹음</strong>만
+              보여요. 녹음은 끝냈는데도 비어 있으면, 올리는 도중에 문제가 난 경우가 많아요.
+              확인하려면 키보드에서 <strong className="font-medium text-gray-600">F12</strong>를 눌러 개발자
+              창을 연 다음, <strong className="font-medium text-gray-600">콘솔</strong> 탭에 빨간색 오류
+              글씨가 있는지 봐 주세요.
+            </p>
+          </div>
+        ) : (
         <ul className={`space-y-2 overflow-y-auto ${listMaxClass}`}>
           {items.map((r) => (
             <li
@@ -329,8 +335,8 @@ export default function CloudRecordingsPanel({
                     onClick={() => void handleLoadCached(r.id)}
                     title={
                       r.ai_processed_at
-                        ? "서버에 저장된 AI 분석(요약·회의록)을 화면에 다시 불러옵니다"
-                        : "먼저 오른쪽 「AI로 분석」을 끝내면, 다음부터 여기서 저장된 AI 분석을 불러올 수 있어요"
+                        ? "저장해 둔 AI 요약·회의록을 이 화면에 다시 불러옵니다"
+                        : "먼저 오른쪽 「AI로 분석」을 끝내면, 다음부터 여기서 저장된 결과를 불러올 수 있어요"
                     }
                     className={`rounded-lg px-2 py-1 text-[11px] font-medium disabled:opacity-50 ${
                       r.ai_processed_at
@@ -362,7 +368,7 @@ export default function CloudRecordingsPanel({
                     type="button"
                     disabled={processing !== null}
                     onClick={() => void handleDelete(r)}
-                    title="이 녹음과 클라우드 파일을 삭제합니다"
+                    title="이 녹음과 서버에 올린 파일을 삭제합니다"
                     className="rounded-lg border border-red-200 bg-white px-2 py-1 text-[11px] font-medium text-red-700 hover:bg-red-50 disabled:opacity-50"
                   >
                     {processing?.id === r.id && processing.kind === "delete"
@@ -385,7 +391,8 @@ export default function CloudRecordingsPanel({
             </li>
           ))}
         </ul>
-      )}
+        )}
+      </div>
     </div>
   );
 }

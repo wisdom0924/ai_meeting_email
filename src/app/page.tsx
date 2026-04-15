@@ -47,13 +47,13 @@ export default function Home() {
 
   /** SSR 시에는 비어 있다가, 클라이언트에서만 localStorage 기반 키로 채움 */
   const [recordingClientKey, setRecordingClientKey] = useState("");
-  const [cloudListVersion, setCloudListVersion] = useState(0);
+  const [serverListVersion, setServerListVersion] = useState(0);
   const [promptListVersion, setPromptListVersion] = useState(0);
   const [promptSnapshot, setPromptSnapshot] = useState<{
     summary: string | null;
     details: string | null;
   }>({ summary: null, details: null });
-  const [cloudProcessing, setCloudProcessing] = useState(false);
+  const [serverProcessing, setServerProcessing] = useState(false);
   const [recordingHistoryOpen, setRecordingHistoryOpen] = useState(false);
 
   const handleActivePromptsChange = useCallback(
@@ -81,11 +81,11 @@ export default function Home() {
       } = await supabase.auth.getSession();
       const uid = session?.user?.id ?? null;
       setRecordingClientKey(getOrCreateRecordingClientKey(uid));
-      setCloudListVersion((v) => v + 1);
+      setServerListVersion((v) => v + 1);
       const { data } = supabase.auth.onAuthStateChange((_event, session) => {
         const next = session?.user?.id ?? null;
         setRecordingClientKey(getOrCreateRecordingClientKey(next));
-        setCloudListVersion((v) => v + 1);
+        setServerListVersion((v) => v + 1);
       });
       unsub = () => data.subscription.unsubscribe();
     };
@@ -121,14 +121,14 @@ export default function Home() {
     }) => {
       const { blob, filename, systemMemoText, promptsName, promptSource } = opts;
       const audioUrl = URL.createObjectURL(blob);
-      const clientKeyForCloud = recordingClientKeyRef.current;
-      let cloudRecordingId: string | null = null;
+      const clientKeyForServer = recordingClientKeyRef.current;
+      let serverRecordingId: string | null = null;
 
-      if (clientKeyForCloud && clientKeyForCloud.length >= 8) {
+      if (clientKeyForServer && clientKeyForServer.length >= 8) {
         try {
           const uploadForm = new FormData();
           uploadForm.append("audio", blob, filename);
-          uploadForm.append("client_key", clientKeyForCloud);
+          uploadForm.append("client_key", clientKeyForServer);
           uploadForm.append("original_filename", filename);
           const uploadRes = await fetch("/api/recordings", {
             method: "POST",
@@ -139,9 +139,9 @@ export default function Home() {
               recording?: { id?: string };
             };
             if (uploadData.recording?.id) {
-              cloudRecordingId = uploadData.recording.id;
+              serverRecordingId = uploadData.recording.id;
             }
-            setCloudListVersion((v) => v + 1);
+            setServerListVersion((v) => v + 1);
           } else {
             const text = await uploadRes.text();
             let parsed: Record<string, unknown> = {};
@@ -150,10 +150,10 @@ export default function Home() {
             } catch {
               parsed = { raw: text };
             }
-            console.error("[클라우드 녹음] 업로드 실패:", uploadRes.status, parsed);
+            console.error("[서버 녹음] 업로드 실패:", uploadRes.status, parsed);
           }
         } catch (e) {
-          console.error("[클라우드 녹음] 업로드 요청 오류:", e);
+          console.error("[서버 녹음] 업로드 요청 오류:", e);
         }
 
         const snapSummary = localStorage.getItem("summaryPrompt") ?? "";
@@ -165,7 +165,7 @@ export default function Home() {
             name: promptsName,
             summary_prompt: snapSummary,
             details_prompt: snapDetails,
-            client_key: clientKeyForCloud,
+            client_key: clientKeyForServer,
             source: promptSource,
           }),
         })
@@ -289,18 +289,18 @@ export default function Home() {
           }
           setTranscript("");
 
-          if (cloudRecordingId && clientKeyForCloud && clientKeyForCloud.length >= 8) {
+          if (serverRecordingId && clientKeyForServer && clientKeyForServer.length >= 8) {
             const detailsToSave =
               analyzeData.details != null
                 ? withDefaultMeetingDateTime(analyzeData.details)
                 : null;
             void fetch(
-              `/api/recordings/${encodeURIComponent(cloudRecordingId)}/result`,
+              `/api/recordings/${encodeURIComponent(serverRecordingId)}/result`,
               {
                 method: "PATCH",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
-                  client_key: clientKeyForCloud,
+                  client_key: clientKeyForServer,
                   transcriptBlocks: newBlocks,
                   summary: analyzeData.summary ?? "",
                   details: detailsToSave,
@@ -308,7 +308,7 @@ export default function Home() {
               }
             )
               .then((res) => {
-                if (res.ok) setCloudListVersion((v) => v + 1);
+                if (res.ok) setServerListVersion((v) => v + 1);
               })
               .catch(() => {});
           }
@@ -320,7 +320,7 @@ export default function Home() {
         setIsTranscribing(false);
       }
     },
-    [setCloudListVersion, setPromptListVersion]
+    [setServerListVersion, setPromptListVersion]
   );
 
   const handleAudioFileSelected = useCallback(
@@ -765,11 +765,11 @@ export default function Home() {
         open={recordingHistoryOpen}
         onClose={() => setRecordingHistoryOpen(false)}
         clientKey={recordingClientKey}
-        refreshVersion={cloudListVersion}
+        refreshVersion={serverListVersion}
         memosForAi={memosForAi}
         summaryPrompt={promptSnapshot.summary}
         detailsPrompt={promptSnapshot.details}
-        onBusyChange={setCloudProcessing}
+        onBusyChange={setServerProcessing}
         onProcessed={({ transcriptBlocks, summary: nextSummary, details: nextDetails }) => {
           setRecordingHistoryOpen(false);
           setFullTranscript(transcriptBlocks);
@@ -799,7 +799,7 @@ export default function Home() {
             />
             <div className="p-4 border-t border-gray-100 shrink-0">
               <p className="text-xs text-gray-500 leading-relaxed">
-                녹음을 끝내거나 파일을 올리면 음성이 클라우드에 저장돼요. 과거
+                녹음을 끝내거나 파일을 올리면 음성이 서버에 저장돼요. 과거
                 녹음은 오른쪽 위
                 <span className="font-medium text-gray-700"> 히스토리 </span>
                 버튼에서 볼 수 있어요.
@@ -813,7 +813,7 @@ export default function Home() {
           <div className="flex-1 min-h-0 bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden flex flex-col">
             <TranscriptPanel 
               isRecording={isRecording}
-              isTranscribing={isTranscribing || cloudProcessing}
+              isTranscribing={isTranscribing || serverProcessing}
               transcript={transcript}
               fullTranscript={fullTranscript}
               summary={summary}

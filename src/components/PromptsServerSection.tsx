@@ -2,7 +2,7 @@
 
 import type { PromptRow } from "@/lib/prompt-row";
 
-type PromptsCloudSectionProps = {
+type PromptsServerSectionProps = {
   items: PromptRow[];
   selectedId: string | null;
   loadingList: boolean;
@@ -12,7 +12,7 @@ type PromptsCloudSectionProps = {
   deleting: boolean;
 };
 
-export default function PromptsCloudSection({
+export default function PromptsServerSection({
   items,
   selectedId,
   loadingList,
@@ -20,7 +20,7 @@ export default function PromptsCloudSection({
   onNew,
   onDelete,
   deleting,
-}: PromptsCloudSectionProps) {
+}: PromptsServerSectionProps) {
   const selected = items.find((p) => p.id === selectedId);
   const canDelete = Boolean(selected && selected.source !== "seed");
 
@@ -44,7 +44,7 @@ export default function PromptsCloudSection({
         </button>
       </div>
       <p className="text-[11px] text-gray-500 leading-snug">
-        Supabase에 저장된 프롬프트예요. 녹음이 끝나면 그때 쓰던 설정이 목록에
+        서버(Supabase)에 저장된 프롬프트예요. 녹음이 끝나면 그때 쓰던 설정이 목록에
         자동으로 하나 더 생겨요.
       </p>
       <div className="flex-1 overflow-y-auto space-y-1 min-h-0">
