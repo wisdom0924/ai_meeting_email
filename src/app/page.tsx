@@ -722,7 +722,7 @@ export default function Home() {
         emailCc,
       };
 
-      const response = await fetch("https://hook.us2.make.com/cq56k8o1daqk6582t8kg85dgpts4mhe3", {
+      const response = await fetch("/api/meeting-webhook", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
