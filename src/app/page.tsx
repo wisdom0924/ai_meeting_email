@@ -26,6 +26,33 @@ import {
 import { recordEmailsAsFavorites } from "@/lib/user-email-favorites";
 import { MAX_AUDIO_UPLOAD_BYTES } from "@/lib/audio-upload-limits";
 
+function toSafeFileNamePart(value: string): string {
+  return value
+    .trim()
+    .replace(/[\\/:*?"<>|]+/g, "_")
+    .replace(/\s+/g, "_")
+    .slice(0, 50);
+}
+
+function buildMeetingMemoFileName(title: string, meetingDate: string): string {
+  const safeTitle = toSafeFileNamePart(title);
+  const safeDate = toSafeFileNamePart(meetingDate);
+  if (safeTitle) {
+    return `${safeTitle}_${safeDate}_회의메모.txt`;
+  }
+  return `${safeDate}_회의메모.txt`;
+}
+
+function encodeUtf8Base64(value: string): string {
+  const bytes = new TextEncoder().encode(value);
+  const chunkSize = 0x8000;
+  let binary = "";
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+  }
+  return btoa(binary);
+}
+
 export default function Home() {
   const [memos, setMemos] = useState<Memo[]>([]);
   const memosRef = useRef<Memo[]>([]);
@@ -698,6 +725,18 @@ export default function Home() {
           cc: [] as string[],
         };
 
+      const summaryForEmailBody = stripBasicMarkdown(summary || "").trim();
+      const normalizedSummaryForEmailBody =
+        summaryForEmailBody || "요약 내용이 없습니다.";
+      const memoAttachmentText = stripBasicMarkdown(markdownContent).trim();
+      const memoAttachmentContent =
+        memoAttachmentText || "회의 메모 내용이 없습니다.";
+      const memoAttachmentFileName = buildMeetingMemoFileName(
+        meetingTitle || "meeting",
+        defaultMeetingDate
+      );
+      const memoAttachmentBase64 = encodeUtf8Base64(memoAttachmentContent);
+
       const payload = {
         transcription: stripBasicMarkdown(transcriptionForWebhook),
         transcriptBlocks: transcriptBlocks.map(({ time, text }) => ({
@@ -720,6 +759,13 @@ export default function Home() {
         })),
         emailTo,
         emailCc,
+        emailBodySummary: normalizedSummaryForEmailBody,
+        emailMemoAttachment: {
+          fileName: memoAttachmentFileName,
+          mimeType: "text/plain; charset=utf-8",
+          contentBase64: memoAttachmentBase64,
+          contentText: memoAttachmentContent,
+        },
       };
 
       const response = await fetch("/api/meeting-webhook", {
