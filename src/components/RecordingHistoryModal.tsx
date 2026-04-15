@@ -55,7 +55,7 @@ export default function RecordingHistoryModal({
             id="recording-history-title"
             className="text-lg font-bold text-gray-900"
           >
-            클라우드 녹음 히스토리
+            Recording History
           </h2>
           <button
             type="button"

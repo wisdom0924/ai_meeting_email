@@ -312,7 +312,7 @@ export default function Header({
               type="button"
               onClick={onRecordingHistory}
               className="p-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors flex items-center justify-center"
-              title="클라우드 녹음 히스토리"
+              title="Recording History"
             >
               <svg
                 xmlns="http://www.w3.org/2000/svg"
