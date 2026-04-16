@@ -883,7 +883,9 @@ export default function Home() {
               transcript={transcript}
               fullTranscript={fullTranscript}
               summary={summary}
+              onSummaryChange={setSummary}
               details={details}
+              onDetailsChange={setDetails}
             />
           </div>
           <div className="shrink-0 w-full">
