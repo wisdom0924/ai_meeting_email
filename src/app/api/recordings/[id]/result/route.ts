@@ -5,6 +5,7 @@ import { canAccessMeetingRecording } from "@/lib/meeting-recording-access";
 import { isUndefinedColumnError } from "@/lib/supabase-postgres-errors";
 import type { TranscriptBlock } from "@/types";
 import { isValidClientKeyForApi } from "@/lib/client-key-validation";
+import { withDefaultMeetingDateTime } from "@/lib/meeting-details-defaults";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
@@ -43,13 +44,35 @@ export async function GET(request: Request, context: RouteContext) {
     }
 
     const supabase = getSupabaseAdmin();
+
+    const selectWithRecorded =
+      "id, client_key, user_id, recorded_at, created_at, ai_processed_at, ai_transcript_blocks, ai_summary, ai_details";
+    const selectWithoutRecorded =
+      "id, client_key, user_id, created_at, ai_processed_at, ai_transcript_blocks, ai_summary, ai_details";
+
     let { data: row, error: fetchError } = await supabase
       .from("meeting_recordings")
-      .select(
-        "id, client_key, user_id, ai_processed_at, ai_transcript_blocks, ai_summary, ai_details"
-      )
+      .select(selectWithRecorded)
       .eq("id", id)
       .maybeSingle();
+
+    // recorded_at 마이그레이션 전 DB: /api/recordings GET 과 동일하게 한 단계 줄여서 다시 읽는다.
+    if (fetchError && isUndefinedColumnError(fetchError)) {
+      const retry = await supabase
+        .from("meeting_recordings")
+        .select(selectWithoutRecorded)
+        .eq("id", id)
+        .maybeSingle();
+      if (!retry.error && retry.data) {
+        row = {
+          ...(retry.data as Record<string, unknown>),
+          recorded_at: null,
+        } as typeof row;
+        fetchError = null;
+      } else {
+        fetchError = retry.error;
+      }
+    }
 
     if (fetchError && isUndefinedColumnError(fetchError)) {
       const minimal = await supabase
@@ -83,10 +106,21 @@ export async function GET(request: Request, context: RouteContext) {
       );
     }
 
+    const anchorIso =
+      row.recorded_at && String(row.recorded_at).trim()
+        ? row.recorded_at
+        : row.created_at;
+    const transcriptBlocks = row.ai_transcript_blocks;
+    const detailsRaw = row.ai_details ?? null;
+    const detailsOut =
+      detailsRaw && typeof detailsRaw === "object"
+        ? withDefaultMeetingDateTime(detailsRaw, anchorIso)
+        : detailsRaw;
+
     return NextResponse.json({
-      transcriptBlocks: row.ai_transcript_blocks,
+      transcriptBlocks,
       summary: row.ai_summary ?? "",
-      details: row.ai_details ?? null,
+      details: detailsOut,
       processedAt: row.ai_processed_at,
     });
   } catch (e) {

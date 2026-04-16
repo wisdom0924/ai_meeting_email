@@ -25,6 +25,7 @@ import {
 } from "@/lib/strip-markdown";
 import { recordEmailsAsFavorites } from "@/lib/user-email-favorites";
 import { MAX_AUDIO_UPLOAD_BYTES } from "@/lib/audio-upload-limits";
+import { buildTranscriptBlocksFromText } from "@/lib/transcript-blocks";
 
 function toSafeFileNamePart(value: string): string {
   return value
@@ -51,6 +52,13 @@ function encodeUtf8Base64(value: string): string {
     binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
   }
   return btoa(binary);
+}
+
+function toIsoFromFileLastModified(lastModified: number): string | null {
+  if (!Number.isFinite(lastModified) || lastModified <= 0) return null;
+  const d = new Date(lastModified);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toISOString();
 }
 
 export default function Home() {
@@ -91,6 +99,7 @@ export default function Home() {
   );
 
   const recordingClientKeyRef = useRef("");
+  const recordingStartedAtRef = useRef<string | null>(null);
   useEffect(() => {
     recordingClientKeyRef.current = recordingClientKey;
   }, [recordingClientKey]);
@@ -145,8 +154,16 @@ export default function Home() {
       systemMemoText: string;
       promptsName: string;
       promptSource: "recording_end" | "user";
+      recordedAtIso?: string | null;
     }) => {
-      const { blob, filename, systemMemoText, promptsName, promptSource } = opts;
+      const {
+        blob,
+        filename,
+        systemMemoText,
+        promptsName,
+        promptSource,
+        recordedAtIso,
+      } = opts;
       const audioUrl = URL.createObjectURL(blob);
       const clientKeyForServer = recordingClientKeyRef.current;
       let serverRecordingId: string | null = null;
@@ -157,6 +174,9 @@ export default function Home() {
           uploadForm.append("audio", blob, filename);
           uploadForm.append("client_key", clientKeyForServer);
           uploadForm.append("original_filename", filename);
+          if (recordedAtIso) {
+            uploadForm.append("recorded_at", recordedAtIso);
+          }
           const uploadRes = await fetch("/api/recordings", {
             method: "POST",
             body: uploadForm,
@@ -252,20 +272,10 @@ export default function Home() {
           return;
         }
 
-        const nowTime = new Date().toLocaleTimeString("ko-KR", {
-          hour: "2-digit",
-          minute: "2-digit",
-        });
-        const sentences = data.text
-          .split(". ")
-          .filter((s: string) => s.trim().length > 0)
-          .map((s: string) => s + ".");
-        const newBlocks = (sentences.length > 0 ? sentences : [data.text]).map(
-          (text: string, index: number) => ({
-            id: `${Date.now()}-${index}`,
-            text,
-            time: nowTime,
-          })
+        const newBlocks = buildTranscriptBlocksFromText(
+          data.text,
+          recordedAtIso ?? null,
+          data.words
         );
 
         setFullTranscript((prev) => [...prev, ...newBlocks]);
@@ -312,14 +322,19 @@ export default function Home() {
         } else {
           if (analyzeData.summary) setSummary(analyzeData.summary);
           if (analyzeData.details) {
-            setDetails(withDefaultMeetingDateTime(analyzeData.details));
+            setDetails(
+              withDefaultMeetingDateTime(analyzeData.details, recordedAtIso ?? null)
+            );
           }
           setTranscript("");
 
           if (serverRecordingId && clientKeyForServer && clientKeyForServer.length >= 8) {
             const detailsToSave =
               analyzeData.details != null
-                ? withDefaultMeetingDateTime(analyzeData.details)
+                ? withDefaultMeetingDateTime(
+                    analyzeData.details,
+                    recordedAtIso ?? null
+                  )
                 : null;
             void fetch(
               `/api/recordings/${encodeURIComponent(serverRecordingId)}/result`,
@@ -381,6 +396,7 @@ export default function Home() {
           "📁 오디오 파일을 불러왔습니다. AI가 회의록을 작성 중입니다...",
         promptsName: `파일 ${label} · ${new Date().toLocaleString("ko-KR")}`,
         promptSource: "user",
+        recordedAtIso: toIsoFromFileLastModified(file.lastModified),
       });
     },
     [isRecording, isTranscribing, processAudioBlob]
@@ -404,6 +420,7 @@ export default function Home() {
       try {
         // 1. 마이크 권한을 허락받고 소리를 가져옵니다.
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        recordingStartedAtRef.current = new Date().toISOString();
 
         // --- 마이크 소리 크기를 측정하는 부분 시작 ---
         const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
@@ -463,7 +480,9 @@ export default function Home() {
               "⏹️ 녹음이 종료되었습니다. AI가 회의록을 작성 중입니다...",
             promptsName: `녹음 ${new Date().toLocaleString("ko-KR")}`,
             promptSource: "recording_end",
+            recordedAtIso: recordingStartedAtRef.current,
           });
+          recordingStartedAtRef.current = null;
         };
 
         mediaRecorder.start();
@@ -483,6 +502,7 @@ export default function Home() {
           }
         ]);
       } catch (error) {
+        recordingStartedAtRef.current = null;
         console.error("마이크 접근 실패:", error);
         setTranscript("마이크를 사용할 수 없거나 접근 권한이 없습니다.");
       }

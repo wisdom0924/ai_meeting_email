@@ -71,7 +71,7 @@ export default function TranscriptPanel({
             <div className="space-y-6 text-gray-800 font-light leading-relaxed pb-8">
               {fullTranscript.map((block) => (
                 <div key={block.id} className="flex gap-4 group">
-                  <div className="text-xs text-gray-400 font-mono pt-1 w-12 flex-shrink-0">
+                  <div className="text-xs text-gray-400 font-mono pt-1 min-w-[5.25rem] flex-shrink-0 tabular-nums">
                     {block.time}
                   </div>
                   <p className="flex-1 text-gray-800 group-hover:text-black transition-colors">{block.text}</p>

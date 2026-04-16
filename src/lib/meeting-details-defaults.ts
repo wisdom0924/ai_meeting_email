@@ -1,12 +1,28 @@
-/** YYYY-MM-DD (사용자 기기 로컬 기준 오늘) */
-function formatTodayMeetingDateNumeric(): string {
-  const now = new Date();
+/** YYYY-MM-DD */
+function formatLocalDateNumericFromDate(date: Date): string {
   const pad = (n: number) => String(n).padStart(2, "0");
-  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 }
 
-/** meta["회의 일시"]가 비어 있으면 오늘 날짜(년-월-일, 숫자 형식)로 채웁니다. */
-export function withDefaultMeetingDateTime(details: unknown): unknown {
+/** YYYY-MM-DD (사용자 기기 로컬 기준 오늘) */
+function formatTodayMeetingDateNumeric(): string {
+  return formatLocalDateNumericFromDate(new Date());
+}
+
+function meetingDateFromRecordedIso(iso: string): string | null {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  return formatLocalDateNumericFromDate(d);
+}
+
+/**
+ * meta["회의 일시"]가 비어 있으면 채웁니다.
+ * `fallbackRecordedAtIso`가 있으면 그 날짜(로컬 기준), 없으면 오늘 날짜를 씁니다.
+ */
+export function withDefaultMeetingDateTime(
+  details: unknown,
+  fallbackRecordedAtIso?: string | null
+): unknown {
   if (
     details == null ||
     typeof details !== "object" ||
@@ -26,6 +42,12 @@ export function withDefaultMeetingDateTime(details: unknown): unknown {
     return details;
   }
 
-  meta["회의 일시"] = formatTodayMeetingDateNumeric();
+  let fallback = formatTodayMeetingDateNumeric();
+  if (typeof fallbackRecordedAtIso === "string" && fallbackRecordedAtIso.trim()) {
+    const fromRec = meetingDateFromRecordedIso(fallbackRecordedAtIso.trim());
+    if (fromRec) fallback = fromRec;
+  }
+
+  meta["회의 일시"] = fallback;
   return { ...d, meta };
 }

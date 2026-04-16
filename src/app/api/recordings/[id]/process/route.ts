@@ -41,11 +41,26 @@ export async function POST(request: Request, context: RouteContext) {
     }
 
     const supabase = getSupabaseAdmin();
-    const { data: row, error: fetchError } = await supabase
+    let { data: row, error: fetchError } = await supabase
       .from("meeting_recordings")
-      .select("id, storage_path, client_key, mime_type, user_id")
+      .select("id, storage_path, client_key, mime_type, user_id, recorded_at, created_at")
       .eq("id", id)
       .maybeSingle();
+
+    if (fetchError && isUndefinedColumnError(fetchError)) {
+      const fallback = await supabase
+        .from("meeting_recordings")
+        .select("id, storage_path, client_key, mime_type, user_id, created_at")
+        .eq("id", id)
+        .maybeSingle();
+      fetchError = fallback.error;
+      row = fallback.data
+        ? {
+            ...fallback.data,
+            recorded_at: null,
+          }
+        : null;
+    }
 
     if (fetchError || !row) {
       return NextResponse.json({ error: "녹음을 찾을 수 없습니다." }, { status: 404 });
@@ -66,8 +81,12 @@ export async function POST(request: Request, context: RouteContext) {
     const arrayBuffer = await file.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
 
-    const { text } = await transcribeAudioBuffer(buffer);
-    const transcriptBlocks = buildTranscriptBlocksFromText(text);
+    const { text, words } = await transcribeAudioBuffer(buffer);
+    const anchorIso =
+      row.recorded_at && String(row.recorded_at).trim()
+        ? row.recorded_at
+        : row.created_at;
+    const transcriptBlocks = buildTranscriptBlocksFromText(text, anchorIso, words);
 
     const analyzed = await analyzeMeetingContent({
       text,
@@ -79,7 +98,7 @@ export async function POST(request: Request, context: RouteContext) {
     const rawDetails = analyzed.details ?? null;
     const detailsOut =
       rawDetails && typeof rawDetails === "object"
-        ? withDefaultMeetingDateTime(rawDetails)
+        ? withDefaultMeetingDateTime(rawDetails, anchorIso)
         : rawDetails;
 
     const processedAt = new Date().toISOString();

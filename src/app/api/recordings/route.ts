@@ -53,6 +53,13 @@ function resolveAudioMimeType(blob: Blob, originalFilename: string | undefined):
   return normalizeAudioMimeType(fromName || "audio/webm");
 }
 
+function parseRecordedAt(value: FormDataEntryValue | null): string | null {
+  if (typeof value !== "string" || !value.trim()) return null;
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return parsed.toISOString();
+}
+
 export async function GET(request: Request) {
   try {
     if (!isSupabaseConfigured()) {
@@ -90,7 +97,7 @@ export async function GET(request: Request) {
     };
 
     const q1 = buildListQuery(
-      "id, created_at, original_filename, mime_type, storage_path, ai_processed_at"
+      "id, created_at, recorded_at, original_filename, mime_type, storage_path, ai_processed_at"
     );
     if (!q1) {
       return NextResponse.json(
@@ -104,8 +111,9 @@ export async function GET(request: Request) {
     let listError = first.error;
 
     if (listError && isUndefinedColumnError(listError)) {
+      // recorded_at 컬럼만 없는 DB라면 ai_processed_at 은 그대로 읽어 버튼 활성화를 유지한다.
       const q2 = buildListQuery(
-        "id, created_at, original_filename, mime_type, storage_path"
+        "id, created_at, original_filename, mime_type, storage_path, ai_processed_at"
       );
       if (!q2) {
         return NextResponse.json({ error: "client_key가 필요합니다." }, { status: 400 });
@@ -115,10 +123,33 @@ export async function GET(request: Request) {
       if (!listError && Array.isArray(second.data)) {
         rows = second.data.map((row) => ({
           ...(row as unknown as Record<string, unknown>),
-          ai_processed_at: null,
+          recorded_at:
+            (row as unknown as Record<string, unknown>).created_at ?? null,
         }));
       } else {
         rows = (second.data as unknown[] | null) ?? null;
+      }
+    }
+
+    if (listError && isUndefinedColumnError(listError)) {
+      // ai 캐시 컬럼도 없는 구 스키마면 버튼은 비활성(기존 동작 유지).
+      const q3 = buildListQuery(
+        "id, created_at, original_filename, mime_type, storage_path"
+      );
+      if (!q3) {
+        return NextResponse.json({ error: "client_key가 필요합니다." }, { status: 400 });
+      }
+      const third = await q3;
+      listError = third.error;
+      if (!listError && Array.isArray(third.data)) {
+        rows = third.data.map((row) => ({
+          ...(row as unknown as Record<string, unknown>),
+          recorded_at:
+            (row as unknown as Record<string, unknown>).created_at ?? null,
+          ai_processed_at: null,
+        }));
+      } else {
+        rows = (third.data as unknown[] | null) ?? null;
       }
     }
 
@@ -144,6 +175,7 @@ export async function POST(request: Request) {
     const audio = formData.get("audio") as Blob | null;
     const clientKey = (formData.get("client_key") as string | null)?.trim();
     const originalFilename = (formData.get("original_filename") as string | null)?.trim();
+    const recordedAt = parseRecordedAt(formData.get("recorded_at"));
 
     if (!audio || audio.size === 0) {
       return NextResponse.json({ error: "오디오 파일이 없습니다." }, { status: 400 });
@@ -196,17 +228,62 @@ export async function POST(request: Request) {
       );
     }
 
-    const { data: row, error: insertError } = await supabase
+    const insertBase = {
+      storage_path: storagePath,
+      original_filename: originalFilename || `recording.${ext}`,
+      mime_type: mimeType,
+      client_key: clientKey,
+      user_id: user?.id ?? null,
+    };
+
+    const selectFull =
+      "id, created_at, recorded_at, original_filename, mime_type, storage_path";
+    const selectLegacy =
+      "id, created_at, original_filename, mime_type, storage_path";
+
+    type RecordingRowOut = {
+      id: string;
+      created_at: string;
+      recorded_at: string | null;
+      original_filename: string;
+      mime_type: string;
+      storage_path: string;
+    };
+
+    let insertPayload: Record<string, unknown> = recordedAt
+      ? { ...insertBase, recorded_at: recordedAt }
+      : insertBase;
+
+    const firstInsert = await supabase
       .from("meeting_recordings")
-      .insert({
-        storage_path: storagePath,
-        original_filename: originalFilename || `recording.${ext}`,
-        mime_type: mimeType,
-        client_key: clientKey,
-        user_id: user?.id ?? null,
-      })
-      .select("id, created_at, original_filename, mime_type, storage_path")
+      .insert(insertPayload)
+      .select(selectFull)
       .single();
+
+    let insertError = firstInsert.error;
+    let row: RecordingRowOut | null = null;
+
+    if (!insertError && firstInsert.data) {
+      const d = firstInsert.data;
+      row = {
+        ...d,
+        recorded_at: d.recorded_at ?? d.created_at ?? null,
+      };
+    } else if (insertError && isUndefinedColumnError(insertError)) {
+      const secondInsert = await supabase
+        .from("meeting_recordings")
+        .insert(insertBase)
+        .select(selectLegacy)
+        .single();
+      insertError = secondInsert.error;
+      if (!insertError && secondInsert.data) {
+        const d = secondInsert.data;
+        row = {
+          ...d,
+          recorded_at: d.created_at ?? null,
+        };
+      }
+    }
 
     if (insertError) {
       console.error("meeting_recordings insert:", insertError);

@@ -6,6 +6,7 @@ import type { TranscriptBlock } from "@/types";
 export type ServerRecordingRow = {
   id: string;
   created_at: string;
+  recorded_at: string | null;
   original_filename: string | null;
   mime_type: string | null;
   storage_path: string;
@@ -307,7 +308,7 @@ export default function ServerRecordingsPanel({
                 >
                   {r.original_filename || "녹음 파일"}{" "}
                   <span className="text-gray-400">
-                    ({new Date(r.created_at).toLocaleString("ko-KR")})
+                    ({new Date(r.recorded_at || r.created_at).toLocaleString("ko-KR")})
                   </span>
                 </span>
                 <div className="flex shrink-0 flex-wrap items-center justify-end gap-1">
