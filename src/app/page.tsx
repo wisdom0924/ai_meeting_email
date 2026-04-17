@@ -625,6 +625,17 @@ export default function Home() {
             detailsText += '\n';
           }
           
+          if (details.actionItems && Array.isArray(details.actionItems) && details.actionItems.length > 0) {
+            detailsText += `### ✅ Action Items (할 일)\n\n`;
+            details.actionItems.forEach((item: any) => {
+              const task = strPresent(item.task) ? item.task : NO_INFO;
+              const assignee = strPresent(item.assignee) ? item.assignee : "담당자 없음";
+              const deadline = strPresent(item.deadline) ? item.deadline : "기한 없음";
+              detailsText += `- [ ] **${task}** (담당: ${assignee}, 기한: ${deadline})\n`;
+            });
+            detailsText += '\n';
+          }
+          
           if (details.agendas && Array.isArray(details.agendas)) {
             details.agendas.forEach((agenda: any, idx: number) => {
               const agendaTitle = strPresent(agenda.title)

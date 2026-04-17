@@ -95,6 +95,7 @@ function DetailsTabEditor({
     string,
     unknown
   >;
+  const actionItems = Array.isArray(d.actionItems) ? d.actionItems : [];
   const agendas = Array.isArray(d.agendas) ? d.agendas : [];
 
   return (
@@ -129,6 +130,62 @@ function DetailsTabEditor({
           ))}
         </div>
       </div>
+
+      {actionItems.length > 0 && (
+        <div className="mb-12">
+          <h4 className="mb-4 flex items-center gap-2 text-lg font-medium text-gray-900">
+            <span className="text-xl" aria-hidden>
+              ✅
+            </span>
+            To Do List
+          </h4>
+          <div className="space-y-3 border-l-2 border-green-500 bg-green-50/30 p-6 rounded-none">
+            {actionItems.map((item: any, idx: number) => (
+              <div key={idx} className="flex flex-col md:flex-row items-start md:items-center gap-3 pb-4 border-b border-green-100 last:border-0 last:pb-0">
+                <AutosizeTextarea
+                  className={`${valueTextareaClass} flex-1 min-w-0 font-medium`}
+                  value={item.task ?? ""}
+                  placeholder="할 일 내용"
+                  onChange={(e) => {
+                    const next = [...actionItems];
+                    next[idx] = { ...next[idx], task: e.target.value };
+                    onDetailsChange({ ...d, actionItems: next });
+                  }}
+                  aria-label={`할 일 ${idx + 1}`}
+                />
+                <div className="flex items-center gap-2 text-sm shrink-0">
+                  <span className="text-gray-400">담당:</span>
+                  <input
+                    type="text"
+                    className="w-20 md:w-24 bg-transparent border-b border-gray-300 px-1 py-0.5 text-gray-700 outline-none focus:border-gray-900 placeholder:text-gray-400 text-center"
+                    value={item.assignee ?? ""}
+                    placeholder="지정 안됨"
+                    onChange={(e) => {
+                      const next = [...actionItems];
+                      next[idx] = { ...next[idx], assignee: e.target.value };
+                      onDetailsChange({ ...d, actionItems: next });
+                    }}
+                    aria-label={`할 일 ${idx + 1} 담당자`}
+                  />
+                  <span className="text-gray-400 ml-1 md:ml-2">기한:</span>
+                  <input
+                    type="text"
+                    className="w-24 md:w-28 bg-transparent border-b border-gray-300 px-1 py-0.5 text-gray-700 outline-none focus:border-gray-900 placeholder:text-gray-400 text-center"
+                    value={item.deadline ?? ""}
+                    placeholder="기한 없음"
+                    onChange={(e) => {
+                      const next = [...actionItems];
+                      next[idx] = { ...next[idx], deadline: e.target.value };
+                      onDetailsChange({ ...d, actionItems: next });
+                    }}
+                    aria-label={`할 일 ${idx + 1} 기한`}
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="mb-12 space-y-12">
         {agendas.map((agenda: any, idx: number) => (
