@@ -91,7 +91,7 @@ export default function RecordPanel({
           {isRecording ? (
             <>
               <div className="w-3 h-3 bg-red-500 rounded-sm"></div>
-              RECORDING
+              STOP RECORDING
             </>
           ) : (
             <>

@@ -21,7 +21,7 @@ function AutosizeTextarea({
   useLayoutEffect(() => {
     const el = ref.current;
     if (!el) return;
-    el.style.height = "0px";
+    el.style.height = "1px";
     el.style.height = `${el.scrollHeight}px`;
   }, [value]);
 
@@ -36,7 +36,7 @@ function AutosizeTextarea({
 }
 
 const valueTextareaClass =
-  "w-full min-h-[1.75rem] bg-transparent border-0 p-0 text-gray-900 outline-none focus:bg-white/40 rounded-sm " +
+  "block w-full min-h-[1.75rem] bg-transparent border-0 p-0 text-gray-900 outline-none focus:bg-white/40 rounded-sm " +
   "placeholder:text-gray-300";
 
 interface TranscriptPanelProps {
@@ -213,7 +213,7 @@ function DetailsTabEditor({
                 Discussion
               </span>
               <AutosizeTextarea
-                className={`${valueTextareaClass} min-h-[4rem] flex-1`}
+                className={`${valueTextareaClass} min-h-[2rem] flex-1`}
                 value={
                   Array.isArray(agenda.discussions)
                     ? agenda.discussions.join("\n")
@@ -238,7 +238,7 @@ function DetailsTabEditor({
                 Decisions
               </span>
               <AutosizeTextarea
-                className={`${valueTextareaClass} min-h-[3rem] flex-1 whitespace-pre-line font-medium`}
+                className={`${valueTextareaClass} min-h-[2rem] flex-1 whitespace-pre-line font-medium`}
                 value={agenda.decisions ?? ""}
                 onChange={(e) => {
                   const next = agendas.map((a: any, i: number) =>
@@ -256,7 +256,7 @@ function DetailsTabEditor({
                 Action Items
               </span>
               <AutosizeTextarea
-                className={`${valueTextareaClass} min-h-[3rem] flex-1`}
+                className={`${valueTextareaClass} min-h-[2rem] flex-1`}
                 value={agenda.actions ?? ""}
                 onChange={(e) => {
                   const next = agendas.map((a: any, i: number) =>
@@ -272,25 +272,27 @@ function DetailsTabEditor({
         ))}
       </div>
 
-      <div className="mb-12">
-        <h4 className="mb-4 flex items-center gap-2 text-lg font-medium text-gray-900">
-          <span className="text-xl" aria-hidden>
-            📌
-          </span>
-          Memo Summary
-        </h4>
-        <div className="border-l-2 border-yellow-400 bg-yellow-50 p-6 rounded-none">
-          <AutosizeTextarea
-            className={`${valueTextareaClass} min-h-[5rem] text-gray-800 whitespace-pre-line leading-relaxed`}
-            value={d.memoSummary ?? ""}
-            onChange={(e) =>
-              onDetailsChange({ ...d, memoSummary: e.target.value })
-            }
-            spellCheck={false}
-            aria-label="메모 요약"
-          />
+      {d.memoSummary && (
+        <div className="mb-12">
+          <h4 className="mb-4 flex items-center gap-2 text-lg font-medium text-gray-900">
+            <span className="text-xl" aria-hidden>
+              📌
+            </span>
+            Memo Summary
+          </h4>
+          <div className="border-l-2 border-yellow-400 bg-yellow-50 px-4 py-1.5 rounded-none flex items-center">
+            <AutosizeTextarea
+              className="block w-full bg-transparent border-0 p-0 text-gray-800 text-sm font-medium outline-none focus:bg-yellow-100/50 resize-none overflow-hidden whitespace-pre-line leading-snug"
+              value={d.memoSummary ?? ""}
+              onChange={(e) =>
+                onDetailsChange({ ...d, memoSummary: e.target.value })
+              }
+              spellCheck={false}
+              aria-label="메모 요약"
+            />
+          </div>
         </div>
-      </div>
+      )}
 
       <div className="space-y-4 border-t border-gray-100 pt-8">
         <div className="grid grid-cols-[8rem_minmax(0,1fr)] items-start gap-x-4 gap-y-3">
