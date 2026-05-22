@@ -13,7 +13,7 @@ function randomId(): string {
 }
 
 /**
- * 로그인 시에는 Supabase user id 를 키로 써서 계정과 1:1로 맞춥니다.
+ * 로그인 시에는 사용자 ID 를 키로 써서 계정과 1:1로 맞춥니다.
  * 비로그인일 때만 브라우저(anon)별 임의 키를 씁니다.
  */
 export function getOrCreateRecordingClientKey(userId: string | null): string {

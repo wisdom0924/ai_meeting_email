@@ -43,8 +43,8 @@ export default function PromptsServerSection({
           {deleting ? "삭제 중…" : "삭제"}
         </button>
       </div>
-      <p className="text-[11px] text-gray-500 leading-snug">
-        서버(Supabase)에 저장된 프롬프트예요. 녹음이 끝나면 그때 쓰던 설정이 목록에
+        <p className="text-[11px] text-gray-500 leading-snug">
+        서버에 저장된 프롬프트예요. 녹음이 끝나면 그때 쓰던 설정이 목록에
         자동으로 하나 더 생겨요.
       </p>
       <div className="flex-1 overflow-y-auto space-y-1 min-h-0">

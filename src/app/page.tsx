@@ -236,7 +236,7 @@ export default function Home() {
           };
           setTranscript(
             errJson.error ??
-              "이 기능을 쓰려면 로그인과 Supabase 설정이 필요해요."
+              "이 기능을 쓰려면 로그인이 필요해요."
           );
           setIsTranscribing(false);
           return;
@@ -287,7 +287,7 @@ export default function Home() {
           };
           setTranscript(
             errJson.error ??
-              "요약을 만들려면 로그인과 Supabase 설정이 필요해요."
+              "요약을 만들려면 로그인이 필요해요."
           );
           setIsTranscribing(false);
           return;

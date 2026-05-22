@@ -1,9 +1,4 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
-import {
-  getPublicSupabaseUrl,
-  getPublishableSupabaseKey,
-} from "@/lib/supabase/env";
 
 const DEFAULT_MAKE_WEBHOOK =
   "https://hook.us2.make.com/cq56k8o1daqk6582t8kg85dgpts4mhe3";
@@ -13,18 +8,8 @@ function getMakeWebhookUrl(): string {
 }
 
 async function getSenderEmailFromSession(): Promise<string> {
-  if (!getPublicSupabaseUrl() || !getPublishableSupabaseKey()) {
-    return "";
-  }
-  try {
-    const supabase = await createClient();
-    const {
-      data: { session },
-    } = await supabase.auth.getSession();
-    return session?.user?.email?.trim() ?? "";
-  } catch {
-    return "";
-  }
+  // TODO: FastAPI 백엔드 연동 후 세션/토큰에서 이메일 가져오기
+  return "";
 }
 
 export async function POST(request: Request) {

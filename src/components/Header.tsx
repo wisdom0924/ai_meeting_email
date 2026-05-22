@@ -4,8 +4,6 @@ import { useState, useEffect, useCallback } from "react";
 import { DEFAULT_SUMMARY_PROMPT, DEFAULT_DETAILS_PROMPT } from "@/lib/prompts";
 import PromptsServerSection from "@/components/PromptsServerSection";
 import type { PromptRow } from "@/lib/prompt-row";
-import { isSupabaseBrowserConfigured } from "@/lib/supabase/env";
-import { createClient } from "@/lib/supabase/client";
 
 const SELECTED_PROMPT_ID_KEY = "ai_meeting_selected_prompt_id";
 
@@ -15,7 +13,7 @@ export interface HeaderProps {
   isSending?: boolean;
   /** 서버에 올린 과거 녹음 목록 모달 */
   onRecordingHistory?: () => void;
-  /** Supabase 프롬프트 목록·저장용(브라우저 client_key). 없으면 예전처럼 로컬만 사용 */
+  /** 서버 프롬프트 목록·저장용(사용자 ID). 없으면 예전처럼 로컬만 사용 */
   clientKey?: string;
   /** 녹음 종료 시 스냅샷 저장 후 목록 새로고침 */
   promptsRefreshVersion?: number;
@@ -488,9 +486,7 @@ export default function Header({
                     />
                   </div>
                   <p className="text-xs text-amber-800 bg-amber-50 rounded-lg px-3 py-2">
-                    Supabase가 연결되지 않았을 때는 이 기기 안에만 저장돼요. 서버에
-                    SUPABASE_SERVICE_ROLE_KEY 등을 넣으면 목록·서버 저장을 쓸 수
-                    있어요.
+                    서버에 연결되지 않았을 때는 이 기기 안에만 저장돼요. 로그인하면 목록·서버 저장을 쓸 수 있어요.
                   </p>
                 </>
               )}
