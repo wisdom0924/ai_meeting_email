@@ -1,0 +1,47 @@
+version: '3.8'
+
+services:
+  # 1. 데이터베이스(MySQL) 상자
+  db:
+    image: mysql:8.0
+    container_name: ai_meeting_db
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-1234}
+      MYSQL_DATABASE: ai_meeting
+    ports:
+      - "3306:3306"
+    volumes:
+      - db_data:/var/lib/mysql
+    restart: always
+
+  # 2. 백엔드(FastAPI) 상자
+  backend:
+    build: 
+      context: ./backend
+    container_name: ai_meeting_backend
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=mysql+pymysql://root:${MYSQL_ROOT_PASSWORD:-1234}@db:3306/ai_meeting
+    depends_on:
+      - db
+    restart: always
+
+  # 3. 프론트엔드(Next.js) 상자
+  frontend:
+    build:
+      context: .
+    container_name: ai_meeting_frontend
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:8000
+      - ASSEMBLY_API_KEY=${ASSEMBLY_API_KEY}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+    depends_on:
+      - backend
+    restart: always
+
+# 창고 데이터를 영원히 보관하기 위한 설정
+volumes:
+  db_data:

@@ -9,8 +9,6 @@ import {
   useRef,
   useState,
 } from "react";
-import { createClient } from "@/lib/supabase/client";
-import { isSupabaseBrowserConfigured } from "@/lib/supabase/env";
 
 export type EmailRecipientPanelHandle = {
   getResolvedEmails: () => { to: string[]; cc: string[] };
@@ -205,50 +203,13 @@ const EmailRecipientPanel = forwardRef<
   const [loggedIn, setLoggedIn] = useState(false);
 
   const loadFavorites = useCallback(async () => {
-    if (!isSupabaseBrowserConfigured()) {
-      setLoggedIn(false);
-      setFavorites([]);
-      return;
-    }
-    const supabase = createClient();
-    const {
-      data: { session },
-    } = await supabase.auth.getSession();
-    setLoggedIn(!!session);
-    if (!session) {
-      setFavorites([]);
-      return;
-    }
-    const { data, error } = await supabase
-      .from("user_email_favorites")
-      .select("email")
-      .order("last_used_at", { ascending: false })
-      .limit(80);
-    if (error) {
-      console.error(
-        "user_email_favorites load",
-        error.message,
-        error.code ?? "",
-        error.details ?? "",
-        error.hint ?? ""
-      );
-      setFavorites([]);
-      return;
-    }
-    setFavorites((data ?? []).map((r: { email: string }) => r.email));
+    // FastAPI 서버에 자주 쓰는 이메일 저장하는 기능은 나중에 추가할 예정입니다.
+    setLoggedIn(!!localStorage.getItem("user_id"));
+    setFavorites([]);
   }, []);
 
   useEffect(() => {
     void loadFavorites();
-  }, [loadFavorites]);
-
-  useEffect(() => {
-    if (!isSupabaseBrowserConfigured()) return;
-    const supabase = createClient();
-    const { data } = supabase.auth.onAuthStateChange(() => {
-      void loadFavorites();
-    });
-    return () => data.subscription.unsubscribe();
   }, [loadFavorites]);
 
   const getResolvedEmails = useCallback(() => {
@@ -267,13 +228,10 @@ const EmailRecipientPanel = forwardRef<
     [getResolvedEmails, loadFavorites]
   );
 
-  const supabaseOk = isSupabaseBrowserConfigured();
   const hint =
-    supabaseOk && !loggedIn
-      ? "로그인하면 전송에 쓴 주소가 저장되고, 아래에서 자동완성으로 고를 수 있어요."
-      : supabaseOk && loggedIn
-        ? "저장된 주소는 입력할 때 목록에서 고를 수 있어요. 전송할 때마다 받는 사람·참조 주소가 갱신됩니다."
-        : null;
+    !loggedIn
+      ? "로그인하면 전송에 쓴 주소가 저장되고, 아래에서 자동완성으로 고를 수 있어요. (기능 준비 중)"
+      : "저장된 주소는 입력할 때 목록에서 고를 수 있어요. 전송할 때마다 받는 사람·참조 주소가 갱신됩니다. (기능 준비 중)";
 
   return (
     <section className="rounded-2xl border border-gray-200 bg-white shadow-sm">
