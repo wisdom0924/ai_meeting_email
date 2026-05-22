@@ -1,4 +1,10 @@
 from fastapi import FastAPI
+from database import engine, Base
+import models
+
+# 서버가 켜질 때, models.py에 그려둔 설계도대로 MySQL 창고 안에 서랍(테이블)들을 만듭니다!
+# (이미 만들어져 있다면 다시 만들지 않고 그냥 넘어갑니다)
+models.Base.metadata.create_all(bind=engine)
 
 # FastAPI 앱 만들기 (우리의 새로운 서버 일꾼!)
 app = FastAPI(
