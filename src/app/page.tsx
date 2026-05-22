@@ -16,14 +16,10 @@ import EmailRecipientPanel, {
   type EmailRecipientPanelHandle,
 } from "@/components/EmailRecipientPanel";
 import { withDefaultMeetingDateTime } from "@/lib/meeting-details-defaults";
-import { getOrCreateRecordingClientKey } from "@/lib/recording-client-key";
-import { createClient } from "@/lib/supabase/client";
-import { isSupabaseBrowserConfigured } from "@/lib/supabase/env";
 import {
   deepStripBasicMarkdown,
   stripBasicMarkdown,
 } from "@/lib/strip-markdown";
-import { recordEmailsAsFavorites } from "@/lib/user-email-favorites";
 import { MAX_AUDIO_UPLOAD_BYTES } from "@/lib/audio-upload-limits";
 import { buildTranscriptBlocksFromText } from "@/lib/transcript-blocks";
 
@@ -104,31 +100,13 @@ export default function Home() {
     recordingClientKeyRef.current = recordingClientKey;
   }, [recordingClientKey]);
 
+  // FastAPI 서버와 연결하기 위해 사용자 ID 가져오기
   useEffect(() => {
-    if (!isSupabaseBrowserConfigured()) {
-      setRecordingClientKey(getOrCreateRecordingClientKey(null));
-      return;
-    }
-    const supabase = createClient();
-    let unsub: (() => void) | undefined;
-    const init = async () => {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-      const uid = session?.user?.id ?? null;
-      setRecordingClientKey(getOrCreateRecordingClientKey(uid));
+    const userId = localStorage.getItem("user_id");
+    if (userId) {
+      setRecordingClientKey(userId); // 임시로 clientKey 대신 user_id 사용
       setServerListVersion((v) => v + 1);
-      const { data } = supabase.auth.onAuthStateChange((_event, session) => {
-        const next = session?.user?.id ?? null;
-        setRecordingClientKey(getOrCreateRecordingClientKey(next));
-        setServerListVersion((v) => v + 1);
-      });
-      unsub = () => data.subscription.unsubscribe();
-    };
-    void init();
-    return () => {
-      unsub?.();
-    };
+    }
   }, []);
 
   useEffect(() => {
@@ -328,7 +306,9 @@ export default function Home() {
           }
           setTranscript("");
 
-          if (serverRecordingId && clientKeyForServer && clientKeyForServer.length >= 8) {
+          // FastAPI 서버에 회의록 저장하기!
+          const userId = localStorage.getItem("user_id");
+          if (userId) {
             const detailsToSave =
               analyzeData.details != null
                 ? withDefaultMeetingDateTime(
@@ -336,23 +316,26 @@ export default function Home() {
                     recordedAtIso ?? null
                   )
                 : null;
+            
+            // 전체 전사본을 텍스트로 묶기
+            const fullTranscriptText = newBlocks.map(b => `[${b.time}] ${b.text}`).join("\n");
+            
             void fetch(
-              `/api/recordings/${encodeURIComponent(serverRecordingId)}/result`,
+              `http://localhost:8000/api/users/${userId}/meetings`,
               {
-                method: "PATCH",
+                method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
-                  client_key: clientKeyForServer,
-                  transcriptBlocks: newBlocks,
+                  title: filename || "새 회의록",
+                  transcript: fullTranscriptText,
                   summary: analyzeData.summary ?? "",
-                  details: detailsToSave,
                 }),
               }
             )
               .then((res) => {
                 if (res.ok) setServerListVersion((v) => v + 1);
               })
-              .catch(() => {});
+              .catch((err) => console.error("FastAPI 저장 에러:", err));
           }
         }
       } catch (error) {
@@ -809,11 +792,8 @@ export default function Home() {
 
       if (response.ok) {
         alert("데이터가 성공적으로 전송되었습니다.");
-        if (isSupabaseBrowserConfigured()) {
-          const supabase = createClient();
-          await recordEmailsAsFavorites(supabase, [...emailTo, ...emailCc]);
-          emailRecipientsRef.current?.refreshEmailFavorites();
-        }
+        // FastAPI 서버에 자주 쓰는 이메일 저장하는 기능은 나중에 추가할 예정입니다.
+        emailRecipientsRef.current?.refreshEmailFavorites();
       } else {
         alert("데이터 전송에 실패했습니다.");
       }

@@ -12,6 +12,7 @@ export type ServerRecordingRow = {
   storage_path: string;
   /** 저장된 AI 결과가 있으면 시각 (없으면 null) */
   ai_processed_at: string | null;
+  _raw?: any; // FastAPI 원본 데이터 저장용
 };
 
 type ServerRecordingsPanelProps = {
@@ -60,23 +61,29 @@ export default function ServerRecordingsPanel({
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(
-        `/api/recordings?client_key=${encodeURIComponent(clientKey)}`
-      );
+      // FastAPI 서버에서 회의록 목록 불러오기
+      const res = await fetch(`http://localhost:8000/api/users/${clientKey}/meetings`);
       const data = await res.json();
+      
       if (!res.ok) {
-        if (res.status === 503) {
-          setDisabledReason(
-            "녹음을 서버에 모아 두는 기능을 쓰려면, 먼저 서버 연결 설정이 필요해요."
-          );
-          setItems([]);
-          return;
-        }
-        setError(data.error || "목록을 불러오지 못했어요.");
+        setError(data.detail || "목록을 불러오지 못했어요.");
         return;
       }
+      
       setDisabledReason(null);
-      setItems(data.recordings || []);
+      // FastAPI에서 받아온 데이터를 화면에 맞게 조금 바꿔줍니다.
+      const formattedItems = (data || []).map((item: any) => ({
+        id: item.id.toString(),
+        created_at: item.created_at,
+        recorded_at: item.created_at,
+        original_filename: item.title,
+        mime_type: "audio/webm",
+        storage_path: "",
+        ai_processed_at: item.summary ? item.created_at : null,
+        // 나중에 불러올 때 쓰기 위해 원본 데이터도 숨겨둡니다.
+        _raw: item
+      }));
+      setItems(formattedItems);
     } catch {
       setError("네트워크 오류로 목록을 불러오지 못했어요.");
     } finally {
@@ -132,22 +139,30 @@ export default function ServerRecordingsPanel({
     setProcessing({ id, kind: "load" });
     onBusyChange?.(true);
     try {
-      const res = await fetch(
-        `/api/recordings/${encodeURIComponent(id)}/result?client_key=${encodeURIComponent(clientKey)}`
-      );
-      const data = await res.json();
-      if (!res.ok) {
-        alert(
-          typeof data.error === "string"
-            ? data.error
-            : "저장본을 불러오지 못했어요."
-        );
+      // 화면에 저장해둔 원본 데이터 찾기
+      const item = items.find(i => i.id === id);
+      if (!item || !item._raw) {
+        alert("저장본을 찾을 수 없어요.");
         return;
       }
+      
+      const rawData = item._raw as any;
+      
+      // FastAPI에서 받아온 텍스트 전사본을 화면에 맞는 블록 형태로 바꾸기
+      const transcriptBlocks = rawData.transcript 
+        ? rawData.transcript.split("\n").map((line: string) => {
+            const match = line.match(/^\[(.*?)\] (.*)$/);
+            if (match) {
+              return { time: match[1], text: match[2] };
+            }
+            return { time: "00:00", text: line };
+          })
+        : [];
+
       onProcessed({
-        transcriptBlocks: data.transcriptBlocks || [],
-        summary: data.summary || "",
-        details: data.details ?? null,
+        transcriptBlocks: transcriptBlocks,
+        summary: rawData.summary || "",
+        details: null, // 상세 회의록은 나중에 추가
       });
     } catch {
       alert("저장해 둔 AI 분석을 불러오는 중에 오류가 났어요.");

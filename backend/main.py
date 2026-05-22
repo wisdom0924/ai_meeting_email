@@ -1,4 +1,5 @@
 from fastapi import FastAPI, Depends, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from passlib.context import CryptContext
 from typing import List
@@ -14,6 +15,15 @@ app = FastAPI(
     title="AI 회의록 마법사 API",
     description="AI 회의록 서비스를 위한 백엔드(서버) 메뉴판입니다.",
     version="1.0.0"
+)
+
+# CORS 설정 (프론트엔드에서 백엔드로 요청을 보낼 수 있게 허락해주는 설정)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"], # 프론트엔드 주소 허락!
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 # 비밀번호를 안전하게 암호화해주는 도구

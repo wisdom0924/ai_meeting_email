@@ -4,17 +4,14 @@
  * @see https://supabase.com/docs/guides/api/api-keys
  */
 export function getPublicSupabaseUrl(): string {
-  return process.env.NEXT_PUBLIC_SUPABASE_URL?.trim() ?? "";
+  return "";
 }
 
 export function getPublishableSupabaseKey(): string {
-  return (
-    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY?.trim() ||
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.trim() ||
-    ""
-  );
+  return "";
 }
 
+// 우리는 이제 Supabase를 쓰지 않고 FastAPI를 쓰기 때문에 무조건 false를 반환합니다.
 export function isSupabaseBrowserConfigured(): boolean {
-  return Boolean(getPublicSupabaseUrl() && getPublishableSupabaseKey());
+  return false;
 }

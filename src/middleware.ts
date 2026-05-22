@@ -1,15 +1,13 @@
-import { type NextRequest } from "next/server";
-import { updateSession } from "@/lib/supabase/middleware";
+import { NextResponse, type NextRequest } from "next/server";
 
-export async function middleware(request: NextRequest) {
-  return await updateSession(request);
+export function middleware(request: NextRequest) {
+  // Supabase 미들웨어는 지우고, 그냥 통과시켜줍니다.
+  // (임시로 클라이언트 측에서 localStorage로 로그인 상태를 확인할 거예요!)
+  return NextResponse.next();
 }
 
 export const config = {
   matcher: [
-    /*
-     * 정적 자산·이미지 등은 제외 (공식 Next.js + Supabase 패턴과 유사)
-     */
     "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
   ],
 };

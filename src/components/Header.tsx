@@ -48,42 +48,23 @@ export default function Header({
   const [userEmail, setUserEmail] = useState<string | null>(null);
 
   useEffect(() => {
-    setAuthEnabled(isSupabaseBrowserConfigured());
+    const userId = localStorage.getItem("user_id");
+    const email = localStorage.getItem("user_email");
+    if (userId && email) {
+      setAuthEnabled(true);
+      setUserEmail(email);
+    } else {
+      setAuthEnabled(false);
+      setUserEmail(null);
+    }
   }, []);
 
-  useEffect(() => {
-    if (!authEnabled) {
-      setUserEmail(null);
-      return;
-    }
-    const supabase = createClient();
-    let cancelled = false;
-    void (async () => {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-      if (!cancelled) {
-        setUserEmail(session?.user?.email?.trim() || null);
-      }
-    })();
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUserEmail(session?.user?.email?.trim() || null);
-    });
-    return () => {
-      cancelled = true;
-      subscription.unsubscribe();
-    };
-  }, [authEnabled]);
-
   const handleSignOut = async () => {
-    if (!authEnabled) return;
     if (!window.confirm("로그아웃할까요?")) return;
     setSigningOut(true);
     try {
-      const supabase = createClient();
-      await supabase.auth.signOut();
+      localStorage.removeItem("user_id");
+      localStorage.removeItem("user_email");
       window.location.href = "/login";
     } catch {
       alert("로그아웃 중 오류가 났어요.");
