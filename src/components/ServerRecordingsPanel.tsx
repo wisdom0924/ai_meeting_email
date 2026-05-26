@@ -62,7 +62,14 @@ export default function ServerRecordingsPanel({
     setError(null);
     try {
       // FastAPI 서버에서 회의록 목록 불러오기
-      const res = await fetch(`http://localhost:8000/api/users/${clientKey}/meetings`);
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+      const token = localStorage.getItem("access_token");
+      
+      const res = await fetch(`${apiUrl}/api/users/${clientKey}/meetings`, {
+        headers: {
+          "Authorization": `Bearer ${token}`
+        }
+      });
       const data = await res.json();
       
       if (!res.ok) {

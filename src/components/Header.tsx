@@ -44,16 +44,20 @@ export default function Header({
   const [authEnabled, setAuthEnabled] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
   const [userEmail, setUserEmail] = useState<string | null>(null);
+  const [userNickname, setUserNickname] = useState<string | null>(null);
 
   useEffect(() => {
     const userId = localStorage.getItem("user_id");
     const email = localStorage.getItem("user_email");
+    const nickname = localStorage.getItem("user_nickname");
     if (userId && email) {
       setAuthEnabled(true);
       setUserEmail(email);
+      setUserNickname(nickname);
     } else {
       setAuthEnabled(false);
       setUserEmail(null);
+      setUserNickname(null);
     }
   }, []);
 
@@ -63,6 +67,8 @@ export default function Header({
     try {
       localStorage.removeItem("user_id");
       localStorage.removeItem("user_email");
+      localStorage.removeItem("user_nickname");
+      localStorage.removeItem("access_token");
       window.location.href = "/login";
     } catch {
       alert("로그아웃 중 오류가 났어요.");
@@ -361,12 +367,12 @@ export default function Header({
           )}
           {authEnabled && (
             <div className="flex min-w-0 max-w-[min(100%,14rem)] items-center gap-2 sm:max-w-xs">
-              {userEmail ? (
+              {userNickname || userEmail ? (
                 <span
                   className="truncate text-xs text-gray-600"
-                  title={userEmail}
+                  title={userNickname || userEmail || undefined}
                 >
-                  {userEmail}
+                  {userNickname ? `${userNickname}님` : userEmail}
                 </span>
               ) : null}
               <button

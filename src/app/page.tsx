@@ -308,7 +308,8 @@ export default function Home() {
 
           // FastAPI 서버에 회의록 저장하기!
           const userId = localStorage.getItem("user_id");
-          if (userId) {
+          const token = localStorage.getItem("access_token");
+          if (userId && token) {
             const detailsToSave =
               analyzeData.details != null
                 ? withDefaultMeetingDateTime(
@@ -320,11 +321,15 @@ export default function Home() {
             // 전체 전사본을 텍스트로 묶기
             const fullTranscriptText = newBlocks.map(b => `[${b.time}] ${b.text}`).join("\n");
             
+            const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
             void fetch(
-              `http://localhost:8000/api/users/${userId}/meetings`,
+              `${apiUrl}/api/users/${userId}/meetings`,
               {
                 method: "POST",
-                headers: { "Content-Type": "application/json" },
+                headers: { 
+                  "Content-Type": "application/json",
+                  "Authorization": `Bearer ${token}`
+                },
                 body: JSON.stringify({
                   title: filename || "새 회의록",
                   transcript: fullTranscriptText,
