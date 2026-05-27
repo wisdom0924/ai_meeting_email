@@ -15,6 +15,8 @@ export interface Board {
   title: string;
   content: string;
   meeting_id?: number | null;
+  is_private: boolean;
+  tags?: string | null;
   created_at: string;
   updated_at?: string | null;
   comment_count?: number;
@@ -30,37 +32,52 @@ export interface Comment {
   updated_at?: string | null;
 }
 
-export async function fetchBoards(page: number = 1, size: number = 10) {
-  const res = await fetch(`${API_URL}/api/boards?page=${page}&size=${size}`, {
+export async function fetchBoards(page: number = 1, size: number = 10, keyword?: string, tag?: string) {
+  let url = `${API_URL}/api/boards?page=${page}&size=${size}`;
+  if (keyword) url += `&keyword=${encodeURIComponent(keyword)}`;
+  if (tag) url += `&tag=${encodeURIComponent(tag)}`;
+  
+  const res = await fetch(url, {
     headers: getHeaders()
   });
   if (!res.ok) throw new Error("게시글 목록을 불러오지 못했습니다.");
   return res.json(); // { items: Board[], total: number, page: number, size: number }
 }
 
-export async function fetchBoard(id: number): Promise<Board> {
-  const res = await fetch(`${API_URL}/api/boards/${id}`, {
+export async function fetchBoard(id: number, password?: string): Promise<Board> {
+  let url = `${API_URL}/api/boards/${id}`;
+  if (password) url += `?password=${encodeURIComponent(password)}`;
+  
+  const res = await fetch(url, {
     headers: getHeaders()
   });
-  if (!res.ok) throw new Error("게시글을 불러오지 못했습니다.");
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({}));
+    throw new Error(errorData.detail || "게시글을 불러오지 못했습니다.");
+  }
   return res.json();
 }
 
-export async function createBoard(title: string, content: string, meeting_id?: number | null) {
+export async function createBoard(title: string, content: string, meeting_id?: number | null, is_private: boolean = false, password?: string, tags?: string) {
   const res = await fetch(`${API_URL}/api/boards`, {
     method: "POST",
     headers: getHeaders(),
-    body: JSON.stringify({ title, content, meeting_id })
+    body: JSON.stringify({ title, content, meeting_id, is_private, password, tags })
   });
   if (!res.ok) throw new Error("게시글을 작성하지 못했습니다.");
   return res.json();
 }
 
-export async function updateBoard(id: number, title: string, content: string, meeting_id?: number | null) {
+export async function updateBoard(id: number, title: string, content: string, meeting_id?: number | null, is_private?: boolean, password?: string, tags?: string) {
+  const body: any = { title, content, meeting_id };
+  if (is_private !== undefined) body.is_private = is_private;
+  if (password !== undefined) body.password = password;
+  if (tags !== undefined) body.tags = tags;
+  
   const res = await fetch(`${API_URL}/api/boards/${id}`, {
     method: "PUT",
     headers: getHeaders(),
-    body: JSON.stringify({ title, content, meeting_id })
+    body: JSON.stringify(body)
   });
   if (!res.ok) throw new Error("게시글을 수정하지 못했습니다.");
   return res.json();

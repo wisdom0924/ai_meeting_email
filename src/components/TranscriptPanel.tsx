@@ -50,6 +50,8 @@ interface TranscriptPanelProps {
   details?: any;
   /** 상세 탭: 값만 수정 (라벨·소제목은 DOM에서 고정) */
   onDetailsChange: (next: any) => void;
+  /** 게시판 공유 버튼 클릭 시 호출 */
+  onShareToBoard?: () => void;
 }
 
 /** 녹음 타이머 등으로 부모가 자주 리렌더돼도, 요약 문자열이 같으면 다시 그리지 않음 → textarea 줄바꿈 유지 */
@@ -329,6 +331,7 @@ export default function TranscriptPanel({
   onSummaryChange,
   details,
   onDetailsChange,
+  onShareToBoard,
 }: TranscriptPanelProps) {
   const [activeTab, setActiveTab] = useState<
     "transcript" | "summary" | "details"
@@ -371,7 +374,7 @@ export default function TranscriptPanel({
       </div>
 
       {/* 탭 콘텐츠 영역 */}
-      <div className="flex-1 overflow-y-auto p-8 md:p-12">
+      <div className="flex-1 overflow-y-auto p-8 md:p-12 relative">
         {activeTab === "transcript" && (
           <div className="h-full">
             {!isRecording &&
@@ -435,10 +438,10 @@ export default function TranscriptPanel({
         )}
 
         {activeTab === "details" && (
-          <div className="h-full">
+          <div className="min-h-full flex flex-col">
             {details ? (
-              <div className="text-gray-800 font-light text-sm md:text-base leading-relaxed h-full pb-8">
-                <div className="text-xs text-gray-400 mb-8 uppercase tracking-widest flex items-center gap-2 cursor-default select-none">
+              <div className="text-gray-800 font-light text-sm md:text-base leading-relaxed flex-1 pb-8 flex flex-col">
+                <div className="text-xs text-gray-400 mb-8 uppercase tracking-widest flex items-center gap-2 cursor-default select-none shrink-0">
                   <svg
                     xmlns="http://www.w3.org/2000/svg"
                     width="14"
@@ -455,13 +458,32 @@ export default function TranscriptPanel({
                   항목 이름은 고정 · 오른쪽만 편집
                 </div>
 
-                <DetailsTabEditor
-                  details={details}
-                  onDetailsChange={onDetailsChange}
-                />
+                <div className="flex-1">
+                  <DetailsTabEditor
+                    details={details}
+                    onDetailsChange={onDetailsChange}
+                  />
+                </div>
+
+                {onShareToBoard && (
+                  <div className="mt-12 flex justify-end border-t border-gray-200 pt-6 shrink-0 sticky bottom-0 bg-white pb-4 z-10">
+                    <button
+                      type="button"
+                      onClick={onShareToBoard}
+                      className="rounded-xl bg-blue-600 px-6 py-3 text-sm font-semibold text-white shadow-md hover:bg-blue-700 hover:shadow-lg transition-all active:scale-95 flex items-center gap-2"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"></path>
+                        <polyline points="16 6 12 2 8 6"></polyline>
+                        <line x1="12" y1="2" x2="12" y2="15"></line>
+                      </svg>
+                      게시판에 공유하기
+                    </button>
+                  </div>
+                )}
               </div>
             ) : (
-              <div className="text-gray-400 font-light flex h-full items-center justify-center">
+              <div className="text-gray-400 font-light flex h-full items-center justify-center flex-1">
                 Detailed notes will appear here...
               </div>
             )}

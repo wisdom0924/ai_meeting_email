@@ -24,6 +24,7 @@ class Meeting(Base):
     audio_url = Column(String(255), nullable=True) # 녹음 파일이 저장된 주소
     transcript = Column(Text, nullable=True) # 전체 대화 내용 (글자)
     summary = Column(Text, nullable=True) # AI가 요약한 내용
+    details = Column(Text, nullable=True) # 상세 회의록
     created_at = Column(DateTime(timezone=True), server_default=func.now()) # 회의록 만든 시간
 
 # 3. 메모 정보 설계도
@@ -54,6 +55,9 @@ class Board(Base):
     title = Column(String(255)) # 게시글 제목
     content = Column(Text) # 게시글 내용
     meeting_id = Column(Integer, ForeignKey("meetings.id"), nullable=True) # (선택) 첨부된 회의록 번호
+    is_private = Column(Boolean, default=False) # 비밀글 여부 (새로 추가!)
+    password = Column(String(255), nullable=True) # 비밀글 비밀번호 (새로 추가!)
+    tags = Column(String(255), nullable=True) # 태그 (쉼표로 구분, 새로 추가!)
     created_at = Column(DateTime(timezone=True), server_default=func.now()) # 작성 시간
     updated_at = Column(DateTime(timezone=True), onupdate=func.now()) # 수정 시간
 

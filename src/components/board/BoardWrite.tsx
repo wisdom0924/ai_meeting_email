@@ -7,6 +7,10 @@ import { createBoard, updateBoard, fetchBoard } from "@/lib/board-api";
 export default function BoardWrite({ editId }: { editId?: number }) {
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
+  const [isPrivate, setIsPrivate] = useState(false);
+  const [password, setPassword] = useState("");
+  const [tags, setTags] = useState("");
+  
   const [loading, setLoading] = useState(!!editId);
   const [submitting, setSubmitting] = useState(false);
   const router = useRouter();
@@ -24,27 +28,53 @@ export default function BoardWrite({ editId }: { editId?: number }) {
         .then((data) => {
           setTitle(data.title);
           setContent(data.content);
+          setIsPrivate(data.is_private || false);
+          setTags(data.tags || "");
           setLoading(false);
         })
         .catch((err) => {
           alert("게시글을 불러오지 못했습니다.");
           router.push("/board");
         });
+    } else {
+      // 작성 모드일 때, 세션 스토리지에 공유할 데이터가 있는지 확인
+      const shareDataStr = sessionStorage.getItem("share_board_data");
+      if (shareDataStr) {
+        try {
+          const shareData = JSON.parse(shareDataStr);
+          setTitle(shareData.title || "");
+          setContent(shareData.content || "");
+          
+          // 태그 기본값 설정
+          setTags("회의록");
+          
+          // 사용 후 삭제 (새로고침시 다시 안 불러오게)
+          sessionStorage.removeItem("share_board_data");
+        } catch (e) {
+          console.error("공유 데이터 파싱 에러:", e);
+        }
+      }
     }
   }, [editId, router]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!title.trim() || !content.trim()) return;
+    
+    if (isPrivate && !editId && !password.trim()) {
+      alert("비밀글 설정 시 비밀번호를 입력해주세요.");
+      return;
+    }
 
     setSubmitting(true);
     try {
       if (editId) {
-        await updateBoard(editId, title, content);
+        // 수정 시에는 비밀번호를 비워두면 기존 비밀번호 유지, 값이 있으면 변경
+        await updateBoard(editId, title, content, null, isPrivate, password.trim() ? password : undefined, tags);
         alert("수정되었습니다.");
         router.push(`/board/${editId}`);
       } else {
-        const created = await createBoard(title, content);
+        const created = await createBoard(title, content, null, isPrivate, password, tags);
         console.log("새로 작성된 게시글:", created);
         alert("작성되었습니다.");
         router.push(`/board`);
@@ -75,6 +105,43 @@ export default function BoardWrite({ editId }: { editId?: number }) {
             className="rounded-lg border border-gray-200 px-4 py-3 text-sm outline-none ring-gray-900/10 focus:border-gray-900 focus:ring-2 transition-all"
             placeholder="제목을 입력하세요"
           />
+        </div>
+        
+        <div className="flex flex-col gap-1.5">
+          <label className="text-sm font-medium text-gray-700">태그</label>
+          <input
+            type="text"
+            value={tags}
+            onChange={(e) => setTags(e.target.value)}
+            className="rounded-lg border border-gray-200 px-4 py-3 text-sm outline-none ring-gray-900/10 focus:border-gray-900 focus:ring-2 transition-all"
+            placeholder="태그를 쉼표(,)로 구분해서 입력하세요 (예: 회의, 마케팅)"
+          />
+        </div>
+        
+        <div className="flex flex-col gap-4 p-4 border border-gray-200 rounded-lg bg-gray-50">
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input 
+              type="checkbox" 
+              checked={isPrivate}
+              onChange={(e) => setIsPrivate(e.target.checked)}
+              className="w-4 h-4 text-gray-900 border-gray-300 rounded focus:ring-gray-900"
+            />
+            <span className="text-sm font-medium text-gray-700">비밀글로 설정</span>
+          </label>
+          
+          {isPrivate && (
+            <div className="flex flex-col gap-1.5">
+              <label className="text-sm font-medium text-gray-700">비밀번호 {editId ? "(변경 시에만 입력)" : "(필수)"}</label>
+              <input
+                type="password"
+                required={!editId}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="rounded-lg border border-gray-200 px-4 py-3 text-sm outline-none ring-gray-900/10 focus:border-gray-900 focus:ring-2 transition-all"
+                placeholder="비밀번호를 입력하세요"
+              />
+            </div>
+          )}
         </div>
 
         <div className="flex flex-col gap-1.5">

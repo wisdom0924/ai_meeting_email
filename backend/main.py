@@ -32,6 +32,20 @@ try:
 except Exception:
     pass
 
+try:
+    with engine.begin() as conn:
+        conn.execute(text("ALTER TABLE boards ADD COLUMN is_private BOOLEAN DEFAULT FALSE"))
+        conn.execute(text("ALTER TABLE boards ADD COLUMN password VARCHAR(255)"))
+        conn.execute(text("ALTER TABLE boards ADD COLUMN tags VARCHAR(255)"))
+except Exception:
+    pass
+
+try:
+    with engine.begin() as conn:
+        conn.execute(text("ALTER TABLE meetings ADD COLUMN details TEXT"))
+except Exception:
+    pass
+
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
@@ -277,7 +291,8 @@ def create_meeting(user_id: int, meeting: schemas.MeetingCreate, db: Session = D
         title=meeting.title,
         audio_url=meeting.audio_url,
         transcript=meeting.transcript,
-        summary=meeting.summary
+        summary=meeting.summary,
+        details=meeting.details
     )
     db.add(new_meeting)
     db.commit()
@@ -293,6 +308,31 @@ def get_meetings(user_id: int, db: Session = Depends(get_db), current_user: mode
         
     meetings = db.query(models.Meeting).filter(models.Meeting.user_id == user_id).all()
     return meetings
+
+# 3. 내 회의록 삭제하기
+@app.delete("/api/users/{user_id}/meetings/{meeting_id}")
+def delete_meeting(user_id: int, meeting_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
+    # 내 회의록만 삭제할 수 있도록 확인
+    if current_user.id != user_id:
+        raise HTTPException(status_code=403, detail="다른 사람의 회의록을 삭제할 수 없습니다.")
+        
+    meeting = db.query(models.Meeting).filter(models.Meeting.id == meeting_id, models.Meeting.user_id == user_id).first()
+    if not meeting:
+        raise HTTPException(status_code=404, detail="회의록을 찾을 수 없습니다.")
+        
+    try:
+        # 연관된 메모 삭제
+        db.query(models.Memo).filter(models.Memo.meeting_id == meeting_id).delete()
+        
+        # 연관된 게시판 글의 meeting_id를 NULL로 변경 (게시글은 유지)
+        db.query(models.Board).filter(models.Board.meeting_id == meeting_id).update({"meeting_id": None})
+        
+        db.delete(meeting)
+        db.commit()
+        return {"message": "회의록이 삭제되었습니다."}
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"회의록 삭제 중 오류가 발생했습니다: {str(e)}")
 
 # --- [메모 API (인증 필요)] ---
 
@@ -331,11 +371,19 @@ def get_memos(meeting_id: int, db: Session = Depends(get_db), current_user: mode
 
 @app.post("/api/boards", response_model=schemas.BoardResponse)
 def create_board(board: schemas.BoardCreate, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
+    # 비밀글 설정 처리
+    board_password = None
+    if board.is_private and board.password:
+        board_password = pwd_context.hash(board.password)
+
     new_board = models.Board(
         user_id=current_user.id,
         title=board.title,
         content=board.content,
-        meeting_id=board.meeting_id
+        meeting_id=board.meeting_id,
+        is_private=board.is_private,
+        password=board_password,
+        tags=board.tags
     )
     db.add(new_board)
     db.commit()
@@ -345,10 +393,19 @@ def create_board(board: schemas.BoardCreate, db: Session = Depends(get_db), curr
     setattr(new_board, 'author_nickname', current_user.nickname)
     return new_board
 
+from typing import Optional
 @app.get("/api/boards", response_model=schemas.BoardListResponse)
-def get_boards(page: int = 1, size: int = 10, db: Session = Depends(get_db)):
+def get_boards(page: int = 1, size: int = 10, keyword: Optional[str] = None, tag: Optional[str] = None, db: Session = Depends(get_db)):
+    query = db.query(models.Board)
+    
+    # 검색 기능
+    if keyword:
+        query = query.filter(models.Board.title.contains(keyword) | models.Board.content.contains(keyword))
+    if tag:
+        query = query.filter(models.Board.tags.contains(tag))
+        
     # 최신 글이 먼저 오도록 내림차순 정렬
-    query = db.query(models.Board).order_by(models.Board.created_at.desc())
+    query = query.order_by(models.Board.created_at.desc())
     total = query.count()
     boards = query.offset((page - 1) * size).limit(size).all()
     
@@ -356,6 +413,10 @@ def get_boards(page: int = 1, size: int = 10, db: Session = Depends(get_db)):
         setattr(board, 'author_nickname', board.user.nickname if board.user else None)
         comment_count = db.query(models.Comment).filter(models.Comment.board_id == board.id).count()
         setattr(board, 'comment_count', comment_count)
+        
+        # 목록에서는 비밀글의 내용을 숨김
+        if board.is_private:
+            board.content = "비밀글입니다."
     
     return {
         "items": boards,
@@ -365,11 +426,29 @@ def get_boards(page: int = 1, size: int = 10, db: Session = Depends(get_db)):
     }
 
 @app.get("/api/boards/{board_id}", response_model=schemas.BoardResponse)
-def get_board(board_id: int, db: Session = Depends(get_db)):
+def get_board(board_id: int, password: Optional[str] = None, db: Session = Depends(get_db), current_user: Optional[models.User] = Depends(oauth2_scheme)):
+    # get_current_user 대신 token을 직접 받아 파싱하여 작성자인지 확인 (비회원도 조회 가능해야 하므로 선택적 인증)
+    user_id = None
+    if current_user:
+        try:
+            payload = jwt.decode(current_user, SECRET_KEY, algorithms=[ALGORITHM])
+            email = payload.get("sub")
+            if email:
+                user = db.query(models.User).filter(models.User.email == email).first()
+                if user:
+                    user_id = user.id
+        except Exception:
+            pass
+
     board = db.query(models.Board).filter(models.Board.id == board_id).first()
     if not board:
         raise HTTPException(status_code=404, detail="게시글을 찾을 수 없습니다.")
     
+    # 비밀글 권한 체크
+    if board.is_private and board.user_id != user_id:
+        if not password or not pwd_context.verify(password, board.password):
+            raise HTTPException(status_code=403, detail="비밀번호가 일치하지 않습니다.")
+            
     setattr(board, 'author_nickname', board.user.nickname if board.user else None)
     return board
 
@@ -387,6 +466,15 @@ def update_board(board_id: int, board_update: schemas.BoardUpdate, db: Session =
         board.content = board_update.content
     if board_update.meeting_id is not None:
         board.meeting_id = board_update.meeting_id
+    if board_update.is_private is not None:
+        board.is_private = board_update.is_private
+    if board_update.password is not None:
+        if board_update.password: # 새 비밀번호가 있으면 해시해서 저장
+            board.password = pwd_context.hash(board_update.password)
+        else:
+            board.password = None
+    if board_update.tags is not None:
+        board.tags = board_update.tags
         
     db.commit()
     db.refresh(board)

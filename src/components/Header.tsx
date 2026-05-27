@@ -287,12 +287,19 @@ export default function Header({
   return (
     <>
       <header className="flex items-center justify-between px-8 py-5 bg-white/80 backdrop-blur-md border-b border-gray-100 sticky top-0 z-10">
-        <div className="flex items-center gap-3">
+        <a 
+          href="/" 
+          onClick={(e) => {
+            e.preventDefault();
+            window.location.href = "/";
+          }}
+          className="flex items-center gap-3 hover:opacity-80 transition-opacity"
+        >
           <div className="w-8 h-8 bg-primary rounded-sm flex items-center justify-center text-white text-sm">
             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" x2="12" y1="19" y2="22"></line></svg>
           </div>
           <h1 className="text-xl font-bold tracking-tight text-gray-900">AI MEETING</h1>
-        </div>
+        </a>
         <div className="flex items-center gap-2 sm:gap-4">
           <Link
             href="/board"

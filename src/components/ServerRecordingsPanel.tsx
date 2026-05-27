@@ -169,7 +169,7 @@ export default function ServerRecordingsPanel({
       onProcessed({
         transcriptBlocks: transcriptBlocks,
         summary: rawData.summary || "",
-        details: null, // 상세 회의록은 나중에 추가
+        details: rawData.details ? JSON.parse(rawData.details) : null,
       });
     } catch {
       alert("저장해 둔 AI 분석을 불러오는 중에 오류가 났어요.");
@@ -190,9 +190,17 @@ export default function ServerRecordingsPanel({
     setProcessing({ id: r.id, kind: "delete" });
     onBusyChange?.(true);
     try {
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+      const token = localStorage.getItem("access_token");
+      
       const res = await fetch(
-        `/api/recordings/${encodeURIComponent(r.id)}?client_key=${encodeURIComponent(clientKey)}`,
-        { method: "DELETE" }
+        `${apiUrl}/api/users/${clientKey}/meetings/${r.id}`,
+        { 
+          method: "DELETE",
+          headers: {
+            "Authorization": `Bearer ${token}`
+          }
+        }
       );
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {

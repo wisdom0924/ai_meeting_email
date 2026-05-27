@@ -33,6 +33,7 @@ class MeetingCreate(BaseModel):
     audio_url: Optional[str] = None
     transcript: Optional[str] = None
     summary: Optional[str] = None
+    details: Optional[str] = None
 
 class MeetingResponse(BaseModel):
     id: int
@@ -41,6 +42,7 @@ class MeetingResponse(BaseModel):
     audio_url: Optional[str]
     transcript: Optional[str]
     summary: Optional[str]
+    details: Optional[str] = None
     created_at: datetime
 
     class Config:
@@ -65,11 +67,17 @@ class BoardCreate(BaseModel):
     title: str
     content: str
     meeting_id: Optional[int] = None
+    is_private: Optional[bool] = False
+    password: Optional[str] = None
+    tags: Optional[str] = None
 
 class BoardUpdate(BaseModel):
     title: Optional[str] = None
     content: Optional[str] = None
     meeting_id: Optional[int] = None
+    is_private: Optional[bool] = None
+    password: Optional[str] = None
+    tags: Optional[str] = None
 
 class BoardResponse(BaseModel):
     id: int
@@ -78,6 +86,8 @@ class BoardResponse(BaseModel):
     title: str
     content: str
     meeting_id: Optional[int] = None
+    is_private: bool = False
+    tags: Optional[str] = None
     created_at: datetime
     updated_at: Optional[datetime] = None
     comment_count: int = 0

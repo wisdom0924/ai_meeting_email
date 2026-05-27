@@ -8,6 +8,7 @@ import {
   useCallback,
 } from "react";
 import { TranscriptBlock, Memo } from "@/types";
+import { useRouter } from "next/navigation";
 import Header from "@/components/Header";
 import RecordPanel from "@/components/RecordPanel";
 import RecordingHistoryModal from "@/components/RecordingHistoryModal";
@@ -86,6 +87,8 @@ export default function Home() {
   }>({ summary: null, details: null });
   const [serverProcessing, setServerProcessing] = useState(false);
   const [recordingHistoryOpen, setRecordingHistoryOpen] = useState(false);
+
+  const router = useRouter();
 
   const handleActivePromptsChange = useCallback(
     (summary: string | null, details: string | null) => {
@@ -334,6 +337,7 @@ export default function Home() {
                   title: filename || "새 회의록",
                   transcript: fullTranscriptText,
                   summary: analyzeData.summary ?? "",
+                  details: detailsToSave ? JSON.stringify(detailsToSave) : null,
                 }),
               }
             )
@@ -551,6 +555,104 @@ export default function Home() {
     if (window.confirm("정말 새로고침 하시겠습니까? 모든 기록이 초기화됩니다.")) {
       window.location.reload();
     }
+  };
+
+  const handleShareToBoard = () => {
+    if (!details) {
+      alert("공유할 상세 회의록이 없습니다.");
+      return;
+    }
+
+    const now = new Date();
+    const pad = (n: number) => String(n).padStart(2, "0");
+    const defaultMeetingDate = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+    const NO_INFO = "정보 없음";
+    const strPresent = (v: unknown) => v != null && String(v).trim() !== "";
+
+    let detailsText = '';
+    let meetingTitle = "회의록 상세";
+
+    if (typeof details === 'string') {
+      detailsText = details;
+    } else {
+      meetingTitle = details.title || '회의 상세';
+      detailsText += `### ${meetingTitle}\n\n`;
+      
+      if (details.meta) {
+        Object.entries(details.meta).forEach(([key, value]) => {
+          const empty = !strPresent(value);
+          let displayValue: unknown = value;
+          if (key === "회의 일시" && empty) {
+            displayValue = defaultMeetingDate;
+          } else if (empty) {
+            displayValue = NO_INFO;
+          }
+          detailsText += `- **${key}**: ${displayValue}\n`;
+        });
+        detailsText += '\n';
+      }
+      
+      if (details.actionItems && Array.isArray(details.actionItems) && details.actionItems.length > 0) {
+        detailsText += `### ✅ Action Items (할 일)\n\n`;
+        details.actionItems.forEach((item: any) => {
+          const task = strPresent(item.task) ? item.task : NO_INFO;
+          const assignee = strPresent(item.assignee) ? item.assignee : "담당자 없음";
+          const deadline = strPresent(item.deadline) ? item.deadline : "기한 없음";
+          detailsText += `- [ ] **${task}** (담당: ${assignee}, 기한: ${deadline})\n`;
+        });
+        detailsText += '\n';
+      }
+      
+      if (details.agendas && Array.isArray(details.agendas)) {
+        details.agendas.forEach((agenda: any, idx: number) => {
+          const agendaTitle = strPresent(agenda.title)
+            ? agenda.title
+            : NO_INFO;
+          detailsText += `#### ${idx + 1}. ${agendaTitle}\n\n`;
+
+          detailsText += `**논의 사항:**\n`;
+          if (
+            agenda.discussions &&
+            Array.isArray(agenda.discussions) &&
+            agenda.discussions.length > 0
+          ) {
+            agenda.discussions.forEach((d: string) => {
+              detailsText += `- ${d}\n`;
+            });
+          } else {
+            detailsText += `- ${NO_INFO}\n`;
+          }
+          detailsText += "\n";
+
+          detailsText += `**결정 사항:**\n${
+            strPresent(agenda.decisions) ? agenda.decisions : NO_INFO
+          }\n\n`;
+          detailsText += `**액션 아이템:**\n${
+            strPresent(agenda.actions) ? agenda.actions : NO_INFO
+          }\n\n`;
+        });
+      }
+
+      detailsText += `### 📌 메모 요약\n${
+        strPresent(details.memoSummary) ? details.memoSummary : NO_INFO
+      }\n\n`;
+      detailsText += `### 🗓 다음 회의\n${
+        strPresent(details.nextMeeting) ? details.nextMeeting : NO_INFO
+      }\n\n`;
+      detailsText += `### 📝 추가 노트\n${
+        strPresent(details.additionalNotes)
+          ? details.additionalNotes
+          : NO_INFO
+      }\n\n`;
+    }
+
+    const boardData = {
+      title: meetingTitle,
+      content: detailsText,
+    };
+    
+    sessionStorage.setItem("share_board_data", JSON.stringify(boardData));
+    router.push("/board/write");
   };
 
   const handleSendExternal = async () => {
@@ -882,6 +984,7 @@ export default function Home() {
               onSummaryChange={setSummary}
               details={details}
               onDetailsChange={setDetails}
+              onShareToBoard={handleShareToBoard}
             />
           </div>
           <div className="shrink-0 w-full">
