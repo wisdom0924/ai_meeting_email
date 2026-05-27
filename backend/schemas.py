@@ -60,3 +60,53 @@ class MemoResponse(BaseModel):
     class Config:
         from_attributes = True
 
+# --- [게시판 관련 양식] ---
+class BoardCreate(BaseModel):
+    title: str
+    content: str
+    meeting_id: Optional[int] = None
+
+class BoardUpdate(BaseModel):
+    title: Optional[str] = None
+    content: Optional[str] = None
+    meeting_id: Optional[int] = None
+
+class BoardResponse(BaseModel):
+    id: int
+    user_id: int
+    author_nickname: Optional[str] = None
+    title: str
+    content: str
+    meeting_id: Optional[int] = None
+    created_at: datetime
+    updated_at: Optional[datetime] = None
+    comment_count: int = 0
+
+    class Config:
+        from_attributes = True
+
+class BoardListResponse(BaseModel):
+    items: List[BoardResponse]
+    total: int
+    page: int
+    size: int
+
+# --- [댓글 관련 양식] ---
+class CommentCreate(BaseModel):
+    content: str
+
+class CommentUpdate(BaseModel):
+    content: str
+
+class CommentResponse(BaseModel):
+    id: int
+    board_id: int
+    user_id: int
+    author_nickname: Optional[str] = None
+    content: str
+    created_at: datetime
+    updated_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+

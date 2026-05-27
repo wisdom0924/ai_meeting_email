@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { DEFAULT_SUMMARY_PROMPT, DEFAULT_DETAILS_PROMPT } from "@/lib/prompts";
+import Link from "next/link";
 import PromptsServerSection from "@/components/PromptsServerSection";
 import type { PromptRow } from "@/lib/prompt-row";
 
@@ -293,6 +294,14 @@ export default function Header({
           <h1 className="text-xl font-bold tracking-tight text-gray-900">AI MEETING</h1>
         </div>
         <div className="flex items-center gap-2 sm:gap-4">
+          <Link
+            href="/board"
+            className="p-2 text-sm font-medium text-blue-600 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors flex items-center justify-center"
+            title="회의록 공유 게시판"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+            <span className="hidden sm:inline ml-1.5 text-xs font-bold">공유방</span>
+          </Link>
           <button
             type="button"
             onClick={() => setIsGuideOpen(true)}

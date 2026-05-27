@@ -1,5 +1,6 @@
 from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, Boolean
 from sqlalchemy.sql import func
+from sqlalchemy.orm import relationship
 from database import Base
 
 # 1. 회원 정보 설계도
@@ -43,3 +44,30 @@ class EmailVerification(Base):
     code = Column(String(10)) # 6자리 인증번호
     is_verified = Column(Boolean, default=False) # 인증 성공했는지 여부 (처음엔 False)
     created_at = Column(DateTime(timezone=True), server_default=func.now()) # 인증번호 만든 시간
+
+# 5. 게시판 정보 설계도 (새로 추가!)
+class Board(Base):
+    __tablename__ = "boards"
+    
+    id = Column(Integer, primary_key=True, index=True) # 게시글 번호
+    user_id = Column(Integer, ForeignKey("users.id")) # 작성자 번호
+    title = Column(String(255)) # 게시글 제목
+    content = Column(Text) # 게시글 내용
+    meeting_id = Column(Integer, ForeignKey("meetings.id"), nullable=True) # (선택) 첨부된 회의록 번호
+    created_at = Column(DateTime(timezone=True), server_default=func.now()) # 작성 시간
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now()) # 수정 시간
+
+    user = relationship("User") # 사용자 정보와 연결
+
+# 6. 댓글 정보 설계도 (새로 추가!)
+class Comment(Base):
+    __tablename__ = "comments"
+    
+    id = Column(Integer, primary_key=True, index=True) # 댓글 번호
+    board_id = Column(Integer, ForeignKey("boards.id")) # 어느 게시글의 댓글인지
+    user_id = Column(Integer, ForeignKey("users.id")) # 작성자 번호
+    content = Column(Text) # 댓글 내용
+    created_at = Column(DateTime(timezone=True), server_default=func.now()) # 작성 시간
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now()) # 수정 시간
+
+    user = relationship("User") # 사용자 정보와 연결

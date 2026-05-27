@@ -326,3 +326,140 @@ def get_memos(meeting_id: int, db: Session = Depends(get_db), current_user: mode
     memos = db.query(models.Memo).filter(models.Memo.meeting_id == meeting_id).all()
     return memos
 
+
+# --- [게시판 API (인증 필요)] ---
+
+@app.post("/api/boards", response_model=schemas.BoardResponse)
+def create_board(board: schemas.BoardCreate, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
+    new_board = models.Board(
+        user_id=current_user.id,
+        title=board.title,
+        content=board.content,
+        meeting_id=board.meeting_id
+    )
+    db.add(new_board)
+    db.commit()
+    db.refresh(new_board)
+    
+    # 응답에 닉네임 포함
+    setattr(new_board, 'author_nickname', current_user.nickname)
+    return new_board
+
+@app.get("/api/boards", response_model=schemas.BoardListResponse)
+def get_boards(page: int = 1, size: int = 10, db: Session = Depends(get_db)):
+    # 최신 글이 먼저 오도록 내림차순 정렬
+    query = db.query(models.Board).order_by(models.Board.created_at.desc())
+    total = query.count()
+    boards = query.offset((page - 1) * size).limit(size).all()
+    
+    for board in boards:
+        setattr(board, 'author_nickname', board.user.nickname if board.user else None)
+        comment_count = db.query(models.Comment).filter(models.Comment.board_id == board.id).count()
+        setattr(board, 'comment_count', comment_count)
+    
+    return {
+        "items": boards,
+        "total": total,
+        "page": page,
+        "size": size
+    }
+
+@app.get("/api/boards/{board_id}", response_model=schemas.BoardResponse)
+def get_board(board_id: int, db: Session = Depends(get_db)):
+    board = db.query(models.Board).filter(models.Board.id == board_id).first()
+    if not board:
+        raise HTTPException(status_code=404, detail="게시글을 찾을 수 없습니다.")
+    
+    setattr(board, 'author_nickname', board.user.nickname if board.user else None)
+    return board
+
+@app.put("/api/boards/{board_id}", response_model=schemas.BoardResponse)
+def update_board(board_id: int, board_update: schemas.BoardUpdate, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
+    board = db.query(models.Board).filter(models.Board.id == board_id).first()
+    if not board:
+        raise HTTPException(status_code=404, detail="게시글을 찾을 수 없습니다.")
+    if board.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="본인이 작성한 글만 수정할 수 있습니다.")
+    
+    if board_update.title is not None:
+        board.title = board_update.title
+    if board_update.content is not None:
+        board.content = board_update.content
+    if board_update.meeting_id is not None:
+        board.meeting_id = board_update.meeting_id
+        
+    db.commit()
+    db.refresh(board)
+    
+    setattr(board, 'author_nickname', current_user.nickname)
+    return board
+
+@app.delete("/api/boards/{board_id}")
+def delete_board(board_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
+    board = db.query(models.Board).filter(models.Board.id == board_id).first()
+    if not board:
+        raise HTTPException(status_code=404, detail="게시글을 찾을 수 없습니다.")
+    if board.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="본인이 작성한 글만 삭제할 수 있습니다.")
+        
+    # 관련된 댓글들도 삭제해야 할 수 있지만, DB 외래키 설정에 따라 다름. 여기서는 단순 삭제.
+    db.delete(board)
+    db.commit()
+    return {"message": "게시글이 삭제되었습니다."}
+
+
+# --- [댓글 API (인증 필요)] ---
+
+@app.post("/api/boards/{board_id}/comments", response_model=schemas.CommentResponse)
+def create_comment(board_id: int, comment: schemas.CommentCreate, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
+    board = db.query(models.Board).filter(models.Board.id == board_id).first()
+    if not board:
+        raise HTTPException(status_code=404, detail="게시글을 찾을 수 없습니다.")
+        
+    new_comment = models.Comment(
+        board_id=board_id,
+        user_id=current_user.id,
+        content=comment.content
+    )
+    db.add(new_comment)
+    db.commit()
+    db.refresh(new_comment)
+    
+    setattr(new_comment, 'author_nickname', current_user.nickname)
+    return new_comment
+
+@app.get("/api/boards/{board_id}/comments", response_model=List[schemas.CommentResponse])
+def get_comments(board_id: int, db: Session = Depends(get_db)):
+    comments = db.query(models.Comment).filter(models.Comment.board_id == board_id).order_by(models.Comment.created_at.asc()).all()
+    for comment in comments:
+        setattr(comment, 'author_nickname', comment.user.nickname if comment.user else None)
+    return comments
+
+@app.delete("/api/comments/{comment_id}")
+def delete_comment(comment_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
+    comment = db.query(models.Comment).filter(models.Comment.id == comment_id).first()
+    if not comment:
+        raise HTTPException(status_code=404, detail="댓글을 찾을 수 없습니다.")
+    if comment.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="본인이 작성한 댓글만 삭제할 수 있습니다.")
+        
+    db.delete(comment)
+    db.commit()
+    return {"message": "댓글이 삭제되었습니다."}
+
+@app.put("/api/comments/{comment_id}", response_model=schemas.CommentResponse)
+def update_comment(comment_id: int, comment_update: schemas.CommentUpdate, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
+    comment = db.query(models.Comment).filter(models.Comment.id == comment_id).first()
+    if not comment:
+        raise HTTPException(status_code=404, detail="댓글을 찾을 수 없습니다.")
+    if comment.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="본인이 작성한 댓글만 수정할 수 있습니다.")
+        
+    comment.content = comment_update.content
+    db.commit()
+    db.refresh(comment)
+    
+    setattr(comment, 'author_nickname', current_user.nickname)
+    return comment
+
+
