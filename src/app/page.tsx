@@ -23,6 +23,8 @@ import {
 } from "@/lib/strip-markdown";
 import { MAX_AUDIO_UPLOAD_BYTES } from "@/lib/audio-upload-limits";
 import { buildTranscriptBlocksFromText } from "@/lib/transcript-blocks";
+import { useAuthStore } from "@/store/auth-store";
+import { API_URL, apiFetch } from "@/lib/api-client";
 
 function toSafeFileNamePart(value: string): string {
   return value
@@ -89,6 +91,7 @@ export default function Home() {
   const [recordingHistoryOpen, setRecordingHistoryOpen] = useState(false);
 
   const router = useRouter();
+  const { userId, accessToken, isHydrated } = useAuthStore();
 
   const handleActivePromptsChange = useCallback(
     (summary: string | null, details: string | null) => {
@@ -105,12 +108,10 @@ export default function Home() {
 
   // FastAPI 서버와 연결하기 위해 사용자 ID 가져오기
   useEffect(() => {
-    const userId = localStorage.getItem("user_id");
-    if (userId) {
-      setRecordingClientKey(userId); // 임시로 clientKey 대신 user_id 사용
-      setServerListVersion((v) => v + 1);
-    }
-  }, []);
+    if (!isHydrated || !userId) return;
+    setRecordingClientKey(String(userId));
+    setServerListVersion((v) => v + 1);
+  }, [isHydrated, userId]);
 
   useEffect(() => {
     setPromptSnapshot({
@@ -310,9 +311,7 @@ export default function Home() {
           setTranscript("");
 
           // FastAPI 서버에 회의록 저장하기!
-          const userId = localStorage.getItem("user_id");
-          const token = localStorage.getItem("access_token");
-          if (userId && token) {
+          if (userId && accessToken) {
             const detailsToSave =
               analyzeData.details != null
                 ? withDefaultMeetingDateTime(
@@ -320,27 +319,18 @@ export default function Home() {
                     recordedAtIso ?? null
                   )
                 : null;
-            
-            // 전체 전사본을 텍스트로 묶기
+
             const fullTranscriptText = newBlocks.map(b => `[${b.time}] ${b.text}`).join("\n");
-            
-            const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
-            void fetch(
-              `${apiUrl}/api/users/${userId}/meetings`,
-              {
-                method: "POST",
-                headers: { 
-                  "Content-Type": "application/json",
-                  "Authorization": `Bearer ${token}`
-                },
-                body: JSON.stringify({
-                  title: filename || "새 회의록",
-                  transcript: fullTranscriptText,
-                  summary: analyzeData.summary ?? "",
-                  details: detailsToSave ? JSON.stringify(detailsToSave) : null,
-                }),
-              }
-            )
+
+            void apiFetch(`${API_URL}/api/users/${userId}/meetings`, {
+              method: "POST",
+              body: JSON.stringify({
+                title: filename || "새 회의록",
+                transcript: fullTranscriptText,
+                summary: analyzeData.summary ?? "",
+                details: detailsToSave ? JSON.stringify(detailsToSave) : null,
+              }),
+            })
               .then((res) => {
                 if (res.ok) setServerListVersion((v) => v + 1);
               })

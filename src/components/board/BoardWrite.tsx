@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createBoard, updateBoard, fetchBoard } from "@/lib/board-api";
+import { useAuthStore } from "@/store/auth-store";
 
 export default function BoardWrite({ editId }: { editId?: number }) {
   const [title, setTitle] = useState("");
@@ -14,12 +15,13 @@ export default function BoardWrite({ editId }: { editId?: number }) {
   const [loading, setLoading] = useState(!!editId);
   const [submitting, setSubmitting] = useState(false);
   const router = useRouter();
+  const isLoggedIn = useAuthStore((s) => s.isLoggedIn);
+  const isHydrated = useAuthStore((s) => s.isHydrated);
 
   useEffect(() => {
-    const token = localStorage.getItem("access_token");
-    if (!token) {
-      alert("로그인이 필요합니다.");
-      router.push("/login");
+    if (!isHydrated) return;
+    if (!isLoggedIn) {
+      router.push("/login?redirect=" + encodeURIComponent(window.location.pathname));
       return;
     }
 
@@ -55,7 +57,7 @@ export default function BoardWrite({ editId }: { editId?: number }) {
         }
       }
     }
-  }, [editId, router]);
+  }, [editId, router, isLoggedIn, isHydrated]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

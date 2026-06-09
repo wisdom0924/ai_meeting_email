@@ -1,23 +1,22 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { fetchComments, createComment, deleteComment, updateComment, Comment } from "@/lib/board-api";
+import { useAuthStore } from "@/store/auth-store";
 
 export default function CommentArea({ boardId }: { boardId: number }) {
   const [comments, setComments] = useState<Comment[]>([]);
   const [newComment, setNewComment] = useState("");
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
-  const [currentUserId, setCurrentUserId] = useState<number | null>(null);
+  const userId = useAuthStore((s) => s.userId);
   
   // 수정 관련 상태
   const [editingCommentId, setEditingCommentId] = useState<number | null>(null);
   const [editContent, setEditContent] = useState("");
 
   useEffect(() => {
-    const id = localStorage.getItem("user_id");
-    if (id) setCurrentUserId(parseInt(id, 10));
-
     async function loadComments() {
       try {
         const data = await fetchComments(boardId);
@@ -40,8 +39,8 @@ export default function CommentArea({ boardId }: { boardId: number }) {
       const created = await createComment(boardId, newComment);
       setComments((prev) => [...prev, created]);
       setNewComment("");
-    } catch (err) {
-      alert("댓글 작성에 실패했습니다.");
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : "댓글 작성에 실패했습니다.");
     } finally {
       setSubmitting(false);
     }
@@ -53,8 +52,8 @@ export default function CommentArea({ boardId }: { boardId: number }) {
     try {
       await deleteComment(commentId);
       setComments((prev) => prev.filter((c) => c.id !== commentId));
-    } catch (err) {
-      alert("댓글 삭제에 실패했습니다.");
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : "댓글 삭제에 실패했습니다.");
     }
   };
 
@@ -76,8 +75,8 @@ export default function CommentArea({ boardId }: { boardId: number }) {
       setComments((prev) => prev.map((c) => c.id === commentId ? updated : c));
       setEditingCommentId(null);
       setEditContent("");
-    } catch (err) {
-      alert("댓글 수정에 실패했습니다.");
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : "댓글 수정에 실패했습니다.");
     }
   };
 
@@ -97,7 +96,7 @@ export default function CommentArea({ boardId }: { boardId: number }) {
                   {new Date(comment.created_at).toLocaleString()}
                   {comment.updated_at && " (수정됨)"}
                 </span>
-                {currentUserId === comment.user_id && editingCommentId !== comment.id && (
+                {userId === comment.user_id && editingCommentId !== comment.id && (
                   <>
                     <button
                       onClick={() => startEditing(comment)}
@@ -147,7 +146,7 @@ export default function CommentArea({ boardId }: { boardId: number }) {
         ))}
       </ul>
 
-      {currentUserId ? (
+      {userId ? (
         <form onSubmit={handleSubmit} className="flex flex-col gap-3">
           <textarea
             value={newComment}
@@ -167,8 +166,14 @@ export default function CommentArea({ boardId }: { boardId: number }) {
           </div>
         </form>
       ) : (
-        <div className="bg-gray-50 border border-gray-100 p-6 text-center rounded-xl text-sm text-gray-500">
-          댓글을 작성하려면 로그인이 필요합니다.
+        <div className="rounded-xl border border-gray-100 bg-gray-50 p-6 text-center text-sm text-gray-500">
+          <p className="mb-3">댓글을 작성하려면 로그인이 필요해요.</p>
+          <Link
+            href={`/login?redirect=/board/${boardId}`}
+            className="inline-flex rounded-lg bg-gray-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-gray-800"
+          >
+            로그인하기
+          </Link>
         </div>
       )}
     </div>

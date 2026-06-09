@@ -5,6 +5,7 @@ import { DEFAULT_SUMMARY_PROMPT, DEFAULT_DETAILS_PROMPT } from "@/lib/prompts";
 import Link from "next/link";
 import PromptsServerSection from "@/components/PromptsServerSection";
 import type { PromptRow } from "@/lib/prompt-row";
+import { useAuthStore } from "@/store/auth-store";
 
 const SELECTED_PROMPT_ID_KEY = "ai_meeting_selected_prompt_id";
 
@@ -42,34 +43,15 @@ export default function Header({
   const [loadingList, setLoadingList] = useState(false);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  const [authEnabled, setAuthEnabled] = useState(false);
+  const { isLoggedIn, email: userEmail, nickname: userNickname, clearSession } =
+    useAuthStore();
   const [signingOut, setSigningOut] = useState(false);
-  const [userEmail, setUserEmail] = useState<string | null>(null);
-  const [userNickname, setUserNickname] = useState<string | null>(null);
-
-  useEffect(() => {
-    const userId = localStorage.getItem("user_id");
-    const email = localStorage.getItem("user_email");
-    const nickname = localStorage.getItem("user_nickname");
-    if (userId && email) {
-      setAuthEnabled(true);
-      setUserEmail(email);
-      setUserNickname(nickname);
-    } else {
-      setAuthEnabled(false);
-      setUserEmail(null);
-      setUserNickname(null);
-    }
-  }, []);
 
   const handleSignOut = async () => {
     if (!window.confirm("로그아웃할까요?")) return;
     setSigningOut(true);
     try {
-      localStorage.removeItem("user_id");
-      localStorage.removeItem("user_email");
-      localStorage.removeItem("user_nickname");
-      localStorage.removeItem("access_token");
+      clearSession();
       window.location.href = "/login";
     } catch {
       alert("로그아웃 중 오류가 났어요.");
@@ -381,7 +363,7 @@ export default function Header({
               )}
             </button>
           )}
-          {authEnabled && (
+          {isLoggedIn && (
             <div className="flex min-w-0 max-w-[min(100%,14rem)] items-center gap-2 sm:max-w-xs">
               {userNickname || userEmail ? (
                 <span

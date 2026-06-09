@@ -40,17 +40,14 @@ export default function BoardList({ initialPage = 1 }: { initialPage?: number })
     loadBoards();
   }, [page, keyword, tag]);
 
-  if (loading && boards.length === 0) return <div className="py-10 text-center text-gray-500">불러오는 중...</div>;
-
   return (
     <div className="space-y-4">
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
-        <h2 className="text-lg font-bold tracking-tight text-gray-900">게시글 목록</h2>
-        <Link href="/board/write" className="px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800 text-sm font-medium transition-colors shadow-sm">
-          새 글 작성
-        </Link>
-      </div>
+      <h2 className="text-lg font-bold tracking-tight text-gray-900">게시글 목록</h2>
 
+      {loading && boards.length === 0 ? (
+        <div className="py-10 text-center text-gray-500">불러오는 중...</div>
+      ) : (
+        <>
       <form onSubmit={handleSearch} className="flex flex-col sm:flex-row gap-2 mb-6 p-4 bg-gray-50 rounded-xl border border-gray-200">
         <input 
           type="text" 
@@ -125,6 +122,8 @@ export default function BoardList({ initialPage = 1 }: { initialPage?: number })
       )}
 
       <Pagination page={page} total={total} size={10} onPageChange={setPage} />
+        </>
+      )}
     </div>
   );
 }

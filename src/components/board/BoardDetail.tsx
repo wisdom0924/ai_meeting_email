@@ -5,12 +5,13 @@ import { fetchBoard, deleteBoard, Board } from "@/lib/board-api";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import CommentArea from "./CommentArea";
+import { useAuthStore } from "@/store/auth-store";
 
 export default function BoardDetail({ id }: { id: number }) {
   const [board, setBoard] = useState<Board | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [currentUserId, setCurrentUserId] = useState<number | null>(null);
+  const userId = useAuthStore((s) => s.userId);
   
   // 비밀글 관련 상태
   const [isPrivateError, setIsPrivateError] = useState(false);
@@ -37,9 +38,6 @@ export default function BoardDetail({ id }: { id: number }) {
   };
 
   useEffect(() => {
-    const userId = localStorage.getItem("user_id");
-    if (userId) setCurrentUserId(parseInt(userId, 10));
-
     loadBoard();
   }, [id]);
 
@@ -92,7 +90,7 @@ export default function BoardDetail({ id }: { id: number }) {
 
   if (error || !board) return <div className="py-10 text-center text-red-500">{error || "게시글이 없습니다."}</div>;
 
-  const isAuthor = currentUserId === board.user_id;
+  const isAuthor = userId === board.user_id;
 
   return (
     <div className="bg-white p-6 md:p-8 rounded-2xl shadow-sm border border-gray-200">

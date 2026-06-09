@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 from passlib.context import CryptContext
-from typing import List
+from typing import List, Optional
 import jwt
 from datetime import datetime, timedelta
 import os
@@ -123,6 +123,9 @@ ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 # 입장권 유효기간 (24시간)
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/login")
+oauth2_scheme_optional = OAuth2PasswordBearer(
+    tokenUrl="/api/login", auto_error=False
+)
 
 # 입장권(토큰)을 만들어주는 함수
 def create_access_token(data: dict):
@@ -151,6 +154,22 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
     if user is None:
         raise credentials_exception
     return user
+
+def get_optional_user(
+    token: Optional[str] = Depends(oauth2_scheme_optional),
+    db: Session = Depends(get_db),
+):
+    """로그인하지 않아도 되는 API용 — 토큰이 없거나 만료되면 None"""
+    if not token:
+        return None
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        email: Optional[str] = payload.get("sub")
+        if email is None:
+            return None
+    except jwt.PyJWTError:
+        return None
+    return db.query(models.User).filter(models.User.email == email).first()
 
 @app.get("/")
 def read_root():
@@ -393,7 +412,6 @@ def create_board(board: schemas.BoardCreate, db: Session = Depends(get_db), curr
     setattr(new_board, 'author_nickname', current_user.nickname)
     return new_board
 
-from typing import Optional
 @app.get("/api/boards", response_model=schemas.BoardListResponse)
 def get_boards(page: int = 1, size: int = 10, keyword: Optional[str] = None, tag: Optional[str] = None, db: Session = Depends(get_db)):
     query = db.query(models.Board)
@@ -426,19 +444,13 @@ def get_boards(page: int = 1, size: int = 10, keyword: Optional[str] = None, tag
     }
 
 @app.get("/api/boards/{board_id}", response_model=schemas.BoardResponse)
-def get_board(board_id: int, password: Optional[str] = None, db: Session = Depends(get_db), current_user: Optional[models.User] = Depends(oauth2_scheme)):
-    # get_current_user 대신 token을 직접 받아 파싱하여 작성자인지 확인 (비회원도 조회 가능해야 하므로 선택적 인증)
-    user_id = None
-    if current_user:
-        try:
-            payload = jwt.decode(current_user, SECRET_KEY, algorithms=[ALGORITHM])
-            email = payload.get("sub")
-            if email:
-                user = db.query(models.User).filter(models.User.email == email).first()
-                if user:
-                    user_id = user.id
-        except Exception:
-            pass
+def get_board(
+    board_id: int,
+    password: Optional[str] = None,
+    db: Session = Depends(get_db),
+    current_user: Optional[models.User] = Depends(get_optional_user),
+):
+    user_id = current_user.id if current_user else None
 
     board = db.query(models.Board).filter(models.Board.id == board_id).first()
     if not board:

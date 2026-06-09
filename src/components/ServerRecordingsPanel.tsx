@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import type { TranscriptBlock } from "@/types";
+import { API_URL, apiFetch } from "@/lib/api-client";
 
 export type ServerRecordingRow = {
   id: string;
@@ -61,15 +62,7 @@ export default function ServerRecordingsPanel({
     setLoading(true);
     setError(null);
     try {
-      // FastAPI 서버에서 회의록 목록 불러오기
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
-      const token = localStorage.getItem("access_token");
-      
-      const res = await fetch(`${apiUrl}/api/users/${clientKey}/meetings`, {
-        headers: {
-          "Authorization": `Bearer ${token}`
-        }
-      });
+      const res = await apiFetch(`${API_URL}/api/users/${clientKey}/meetings`);
       const data = await res.json();
       
       if (!res.ok) {
@@ -190,17 +183,9 @@ export default function ServerRecordingsPanel({
     setProcessing({ id: r.id, kind: "delete" });
     onBusyChange?.(true);
     try {
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
-      const token = localStorage.getItem("access_token");
-      
-      const res = await fetch(
-        `${apiUrl}/api/users/${clientKey}/meetings/${r.id}`,
-        { 
-          method: "DELETE",
-          headers: {
-            "Authorization": `Bearer ${token}`
-          }
-        }
+      const res = await apiFetch(
+        `${API_URL}/api/users/${clientKey}/meetings/${r.id}`,
+        { method: "DELETE" }
       );
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {

@@ -1,13 +1,15 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
+import { useAuthStore } from "@/store/auth-store";
+import { hasAuthCookie, syncAuthSessionFromStorage } from "@/lib/auth-session";
 
 type Mode = "signin" | "signup";
 
 export default function AuthPanel() {
-  const router = useRouter();
   const searchParams = useSearchParams();
+  const setSession = useAuthStore((s) => s.setSession);
 
   const [mode, setMode] = useState<Mode>("signin");
   const [email, setEmail] = useState("");
@@ -19,6 +21,16 @@ export default function AuthPanel() {
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   const urlError = searchParams.get("error");
+
+  // localStorage에만 세션이 남아 있는 경우 쿠키 동기화 후 원래 페이지로
+  useEffect(() => {
+    const session = syncAuthSessionFromStorage();
+    if (session && hasAuthCookie()) {
+      setSession(session);
+      const redirectTo = searchParams.get("redirect") || "/";
+      window.location.href = redirectTo;
+    }
+  }, [searchParams, setSession]);
 
   // 원래 있던 화면이 스스로 인증 여부를 확인하는 마법! 🧙‍♂️
   useEffect(() => {
@@ -107,20 +119,20 @@ export default function AuthPanel() {
         setPassword(""); // 비밀번호 칸 비워주기
         setPasswordConfirm(""); // 비밀번호 확인 칸도 비워주기
       } else {
-        // 로그인 성공! (임시로 브라우저에 회원 번호 저장)
-        localStorage.setItem("user_id", data.user_id.toString());
-        localStorage.setItem("user_email", data.email);
-        if (data.nickname) {
-          localStorage.setItem("user_nickname", data.nickname);
+        if (!data.access_token) {
+          setMessage("로그인 토큰을 받지 못했습니다. 다시 시도해 주세요.");
+          return;
         }
-        
-        // JWT 입장권(토큰) 저장하기! (이게 있어야 다른 기능을 쓸 수 있어요)
-        if (data.access_token) {
-          localStorage.setItem("access_token", data.access_token);
-        }
-        
-        // 페이지를 완전히 새로고침하면서 메인 화면으로 넘기기
-        window.location.href = "/";
+
+        setSession({
+          accessToken: data.access_token,
+          userId: data.user_id,
+          email: data.email,
+          nickname: data.nickname ?? null,
+        });
+
+        const redirectTo = searchParams.get("redirect") || "/";
+        window.location.href = redirectTo;
       }
     } catch (err) {
       setMessage(err instanceof Error ? err.message : "알 수 없는 오류예요.");

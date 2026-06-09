@@ -9,6 +9,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { useAuthStore } from "@/store/auth-store";
 
 export type EmailRecipientPanelHandle = {
   getResolvedEmails: () => { to: string[]; cc: string[] };
@@ -200,11 +201,10 @@ const EmailRecipientPanel = forwardRef<
   const [toText, setToText] = useState("");
   const [ccText, setCcText] = useState("");
   const [favorites, setFavorites] = useState<string[]>([]);
-  const [loggedIn, setLoggedIn] = useState(false);
+  const isLoggedIn = useAuthStore((s) => s.isLoggedIn);
 
   const loadFavorites = useCallback(async () => {
     // FastAPI 서버에 자주 쓰는 이메일 저장하는 기능은 나중에 추가할 예정입니다.
-    setLoggedIn(!!localStorage.getItem("user_id"));
     setFavorites([]);
   }, []);
 
@@ -229,7 +229,7 @@ const EmailRecipientPanel = forwardRef<
   );
 
   const hint =
-    !loggedIn
+    !isLoggedIn
       ? "로그인하면 전송에 쓴 주소가 저장되고, 아래에서 자동완성으로 고를 수 있어요. (기능 준비 중)"
       : "저장된 주소는 입력할 때 목록에서 고를 수 있어요. 전송할 때마다 받는 사람·참조 주소가 갱신됩니다. (기능 준비 중)";
 

@@ -1,13 +1,34 @@
 import { NextResponse, type NextRequest } from "next/server";
 
+const LOGIN_PATH = "/login";
+
+/** 로그인 없이 접근 불가한 경로 */
+function requiresAuth(pathname: string): boolean {
+  if (pathname === "/") return true;
+  if (pathname === "/board/write") return true;
+  if (/^\/board\/\d+\/edit\/?$/.test(pathname)) return true;
+  return false;
+}
+
 export function middleware(request: NextRequest) {
-  // 이전 백엔드 관련 미들웨어는 지우고, 그냥 통과시켜줍니다.
-  // (임시로 클라이언트 측에서 localStorage로 로그인 상태를 확인할 거예요!)
+  const { pathname } = request.nextUrl;
+  const token = request.cookies.get("access_token")?.value;
+
+  // 이미 로그인한 사용자가 로그인 페이지 접근 → 메인으로
+  if (pathname === LOGIN_PATH && token) {
+    const redirectTo = request.nextUrl.searchParams.get("redirect") || "/";
+    return NextResponse.redirect(new URL(redirectTo, request.url));
+  }
+
+  if (requiresAuth(pathname) && !token) {
+    const loginUrl = new URL(LOGIN_PATH, request.url);
+    loginUrl.searchParams.set("redirect", pathname);
+    return NextResponse.redirect(loginUrl);
+  }
+
   return NextResponse.next();
 }
 
 export const config = {
-  matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
-  ],
+  matcher: ["/", "/login", "/board/write", "/board/:path/edit"],
 };
