@@ -22,7 +22,14 @@ services:
     ports:
       - "8000:8000"
     environment:
-      - DATABASE_URL=mysql+pymysql://root:${MYSQL_ROOT_PASSWORD:-1234}@db:3306/ai_meeting
+      - MYSQL_HOST=db
+      - MYSQL_USER=root
+      - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD:-1234}
+      - MYSQL_DATABASE=ai_meeting
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY}
+      - SMTP_EMAIL=${SMTP_EMAIL}
+      - SMTP_PASSWORD=${SMTP_PASSWORD}
+      - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://localhost:8000}
     depends_on:
       - db
     restart: always
@@ -31,13 +38,16 @@ services:
   frontend:
     build:
       context: .
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
     container_name: ai_meeting_frontend
     ports:
       - "3000:3000"
     environment:
-      - NEXT_PUBLIC_API_URL=http://localhost:8000
-      - ASSEMBLY_API_KEY=${ASSEMBLY_API_KEY}
+      - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://localhost:8000}
+      - ASSEMBLY_API_KEY=${ASSEMBLY_API_KEY:-${ASSEMBLYAI_API_KEY}}
       - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - MEETING_WEBHOOK_URL=${MEETING_WEBHOOK_URL}
     depends_on:
       - backend
     restart: always

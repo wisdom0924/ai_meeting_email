@@ -50,6 +50,17 @@ import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
+
+def get_public_api_base_url() -> str:
+    """이메일 인증 링크 등에 쓸 공개 API 주소 (.env의 NEXT_PUBLIC_API_URL 사용)."""
+    base = (
+        os.getenv("PUBLIC_API_URL")
+        or os.getenv("NEXT_PUBLIC_API_URL")
+        or "http://localhost:8000"
+    )
+    return base.rstrip("/")
+
+
 def send_real_email(to_email: str, verify_link: str):
     smtp_server = "smtp.gmail.com"
     smtp_port = 587
@@ -268,7 +279,7 @@ def signup(user: schemas.UserSignUp, db: Session = Depends(get_db)):
     db.commit()
 
     # 5. 진짜 이메일 보내기! (또는 터미널 출력)
-    verify_link = f"http://localhost:8000/api/verify-email?token={token}"
+    verify_link = f"{get_public_api_base_url()}/api/verify-email?token={token}"
     send_real_email(user.email, verify_link)
 
     return {"message": "가입하신 이메일로 인증 메일을 보냈어요! 메일함을 확인해 주세요."}

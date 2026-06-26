@@ -18,6 +18,10 @@ RUN pnpm install --ignore-scripts
 # 나머지 코드 모두 복사하기
 COPY . .
 
+# 배포 시 API 주소 (빌드 시점에 Next.js에 박힘)
+ARG NEXT_PUBLIC_API_URL=http://localhost:8000
+ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
+
 # 빌드하고 실행하기
 RUN pnpm run build
 CMD ["pnpm", "run", "start"]
