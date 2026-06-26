@@ -4,7 +4,8 @@
 
 회의할 때 **마이크로 말한 내용을 글자로 바꾸고**, AI가 **짧은 요약**과 **자세한 회의록**까지 만들어 주는 웹사이트입니다.
 
-긴 회의를 다시 듣거나 정리하는 시간을 줄이고, 회의 중에는 **메모**도 같이 남길 수 있어서 “회의 내용 + 내가 적은 메모”를 한꺼번에 AI에게 넘길 수 있습니다.
+긴 회의를 다시 듣거나 정리하는 시간을 줄이고, 회의 중에는 **메모**도 같이 남길 수 있어서 “회의 내용 + 내가 적은 메모”를 한꺼번에 AI에게 넘길 수 있습니다. 
+**회원가입/로그인**을 지원하여 사용자별로 데이터를 안전하게 저장하고 다시 볼 수 있으며, **오디오 파일 업로드** 및 요약된 회의록의 **이메일 전송** 기능도 추가되었습니다.
 
 👉 처음 보는 사람이 “이거 뭐야?”를 해결합니다.
 
@@ -18,6 +19,8 @@
 - **pnpm** (패키지 설치 도구)
 - **AssemblyAI** API 키 (음성 → 글자)
 - **Google Gemini** API 키 (요약·회의록)
+- **MySQL** 데이터베이스 (로컬 설치 또는 클라우드)
+- **Python 3.9+** (백엔드 실행용)
 
 ### 설치
 
@@ -27,26 +30,202 @@
 pnpm install
 ```
 
-### 환경 변수 (.env 또는 .env.local)
+### 환경 변수 (.env) — 로컬 vs 서버
 
-프로젝트 루트에 `.env.local` 파일을 만들고 다음을 넣습니다. (값은 본인 키로 바꿉니다.)
+**같은 코드**를 쓰고, **`.env`만 환경마다 다르게** 두면 됩니다.  
+`.env` 파일은 GitHub에 올리지 마세요.
+
+#### 로컬용 — 프로젝트 맨 위 `.env`
+
+프로젝트 최상위 폴더에 `.env` 파일을 만듭니다.
 
 ```env
+# AI API
 ASSEMBLY_API_KEY=여기에_AssemblyAI_키
 GEMINI_API_KEY=여기에_Gemini_키
+
+# 로컬 API 주소 (반드시 localhost)
+NEXT_PUBLIC_API_URL=http://localhost:8000
+
+# Docker Compose로 한 번에 실행할 때 (방법 A)
+MYSQL_ROOT_PASSWORD=로컬_DB_비밀번호
+JWT_SECRET_KEY=아무도_모르는_긴_문자열
+
+# 이메일 인증 (Gmail + 앱 비밀번호 16자리)
+SMTP_EMAIL=본인@gmail.com
+SMTP_PASSWORD=구글_앱_비밀번호
 ```
 
-`ASSEMBLYAI_API_KEY`라는 이름으로 적어도 동작합니다.
+#### 로컬용 — `backend/.env` (방법 B: 백엔드만 따로 켤 때)
 
-### 실행
+```env
+DATABASE_URL=mysql+pymysql://root:로컬_DB_비밀번호@localhost:3306/ai_meeting
+SMTP_EMAIL=본인@gmail.com
+SMTP_PASSWORD=구글_앱_비밀번호
+```
 
-터미널에서 개발 서버를 켜 주세요.
+#### 서버용 — Oracle 서버 `~/ai_meeting_email/.env`
+
+로컬 `.env`와 **거의 같지만**, API 주소만 **서버 IP**로 바꿉니다.
+
+```env
+NEXT_PUBLIC_API_URL=http://서버공인IP:8000
+```
+
+> ⚠️ 서버 IP(예: `132.145.122.224`)를 **집 PC `.env`에 넣으면** 로컬 테스트가 깨집니다.
+
+---
+
+### 실행 방법 비교
+
+| | **로컬 (내 PC)** | **서버 (Oracle Cloud)** |
+|--|------------------|-------------------------|
+| **목적** | 개발·테스트 | 과제 제출·24시간 공개 |
+| **접속 주소** | http://localhost:3000 | http://서버IP:3000 |
+| **API 문서** | http://localhost:8000/docs | http://서버IP:8000/docs |
+| **`.env` API URL** | `http://localhost:8000` | `http://서버IP:8000` |
+| **DB 확인** | DBeaver → localhost | DBeaver → SSH 터널 또는 포트 3306 |
+
+---
+
+### 🏠 로컬에서 실행하기
+
+#### 로컬 동작 확인 체크리스트
+
+```
+[ ] pnpm install 완료
+[ ] .env 파일 준비 (위 내용)
+[ ] Docker Desktop 실행 (방법 A·B 공통)
+[ ] http://localhost:3000 접속
+[ ] http://localhost:8000/docs 접속
+[ ] 회원가입 → 이메일 인증 → 로그인
+```
+
+#### 방법 A: Docker로 한 번에 실행 (로컬 테스트 추천)
+
+코드 수정 없이 **서버와 같은 방식**으로 돌려볼 때 좋습니다.
+
+1. **Docker Desktop** 실행
+2. 프로젝트 맨 위 `.env`에 `NEXT_PUBLIC_API_URL=http://localhost:8000` 확인
+3. 터미널(프로젝트 최상위):
+
+```bash
+pnpm install
+docker compose up -d --build
+```
+
+4. 브라우저: **http://localhost:3000**  
+5. API 문서: **http://localhost:8000/docs**  
+6. 종료: `docker compose down`
+
+#### 방법 B: 개발용 — 프론트·백엔드 따로 실행
+
+화면 코드를 수정하면서 **바로바로** 볼 때 사용합니다.
+
+**0. MySQL만 Docker로 켜기** (로컬에 MySQL이 없을 때)
+
+```bash
+docker compose up -d db
+```
+
+**1. 백엔드 (첫 번째 터미널)**
+
+```bash
+cd backend
+# Windows Git Bash
+source venv/Scripts/activate
+# Mac/Linux
+# source venv/bin/activate
+
+uvicorn main:app --reload
+```
+
+→ http://localhost:8000/docs
+
+**2. 프론트엔드 (두 번째 터미널, 프로젝트 최상위)**
 
 ```bash
 pnpm run dev
 ```
 
-브라우저에서 **http://localhost:3000** 으로 접속합니다.
+→ http://localhost:3000
+
+> 서버는 사용자 PC에서 직접 실행해 주세요. (Cursor가 대신 켜지 않습니다.)
+
+#### 로컬 DB 확인 (DBeaver)
+
+| 항목 | 값 |
+|------|-----|
+| Host | `localhost` |
+| Port | `3306` |
+| Database | `ai_meeting` |
+| User | `root` |
+| Password | `.env`의 `MYSQL_ROOT_PASSWORD` 또는 `backend/.env`의 DB 비밀번호 |
+
+`users` 테이블에서 `is_active=1`이면 이메일 인증 완료입니다.
+
+---
+
+### ☁️ 서버(Oracle Cloud)에서 실행하기
+
+#### 사전 준비 (최초 1회)
+
+1. Oracle Cloud VM 생성 + Public IP
+2. Security List: 포트 **22, 3000, 8000** 개방
+3. SSH 키 저장 후 서버 접속
+4. Docker 설치, `git clone`, 서버 `.env` 작성
+5. (권장) swap 2G 추가 — 무료 서버는 빌드가 느림
+
+```bash
+sudo fallocate -l 2G /swapfile
+sudo chmod 600 /swapfile
+sudo mkswap /swapfile
+sudo swapon /swapfile
+```
+
+#### 서버 배포 명령 (SSH 접속 후)
+
+```bash
+cd ~/ai_meeting_email
+
+# 백엔드·프론트를 나눠 빌드 (동시 빌드는 서버가 멈출 수 있음)
+docker compose build backend
+docker compose build frontend
+docker compose up -d
+
+docker compose ps
+```
+
+#### 서버 접속 주소 (예시)
+
+| 용도 | URL |
+|------|-----|
+| 웹사이트 | http://132.145.122.224:3000 |
+| Swagger | http://132.145.122.224:8000/docs |
+
+#### 서버 `.env` 수정 후 반영
+
+```bash
+nano ~/ai_meeting_email/.env
+docker compose up -d --build backend   # 백엔드 설정 변경 시
+docker compose build frontend && docker compose up -d frontend  # API URL 변경 시
+```
+
+#### 서버 DB 확인 (DBeaver, SSH 터널 추천)
+
+- **SSH**: Host `서버IP`, User `ubuntu`, Private Key `.key` 파일  
+- **MySQL**: Host `127.0.0.1`, Port `3306`, DB `ai_meeting`, User `root`  
+- Password: 서버 `.env`의 `MYSQL_ROOT_PASSWORD`
+
+---
+
+### 이메일 인증 참고
+
+- Gmail **앱 비밀번호**(16자리)가 없으면 메일이 안 갑니다.
+- SMTP 실패 시 서버 로그: `docker compose logs backend --tail 30`
+- 인증 링크는 `.env`의 `NEXT_PUBLIC_API_URL` 기준으로 생성됩니다.
+  - 로컬: `http://localhost:8000/api/verify-email?token=...`
+  - 서버: `http://서버IP:8000/api/verify-email?token=...`
 
 👉 “어떻게 실행하지?”를 해결합니다.
 
@@ -56,17 +235,14 @@ pnpm run dev
 
 | 기능 | 설명 |
 |------|------|
-| **녹음** | 시작/정지 버튼으로 브라우저에서 녹음합니다. 녹음 시간이 보이고, 말할 때마다 **소리 크기 막대**가 움직입니다. |
+| **회원가입/로그인 및 이메일 인증** | 자체 데이터베이스(MySQL)를 이용해 안전하게 가입하고 로그인할 수 있습니다. 가입 시 **이메일 인증**을 거쳐야만 로그인이 가능하여 보안이 강화되었습니다. |
+| **녹음 및 파일 업로드** | 브라우저 마이크로 직접 녹음하거나, 기존의 오디오 파일을 업로드하여 AI 분석을 할 수 있습니다. |
 | **라이브 메모** | 회의 중 짧은 메모를 적고 전송할 수 있습니다. **Enter**로 보내고, **Shift+Enter**는 줄 바꿈입니다. |
-| **음성 → 글자 (STT)** | 녹음을 **멈춘 뒤** AssemblyAI로 한국어 인식합니다. (녹음하는 동안 실시간 자막은 아닙니다.) |
-| **전사본 탭** | 인식된 문장들이 시간과 함께 목록으로 보입니다. 처리 중에는 안내 문구가 나옵니다. |
-| **요약 탭** | Gemini가 만든 **짧은 요약**을 보여 주고, 화면에서 직접 고칠 수 있습니다. |
-| **상세 탭** | 회의 제목, 안건별 논의·결정·액션 아이템, 메모 요약, 다음 회의 등 **구조화된 회의록**을 보여 줍니다. |
-| **AI 프롬프트 설정** | 상단 **톱니바퀴**에서 “요약 지시문”과 “상세 회의록 지시문”을 바꿀 수 있고, 브라우저에 **저장**됩니다. |
-| **새로고침** | 상단 새로고침 버튼으로 화면을 비울 수 있습니다. (확인 창이 뜹니다.) |
-| **외부 전송** | 상단 **종이비행기** 버튼으로 요약·상세·메모를 모아 **Make.com 웹훅**으로 JSON을 보냅니다. 노션·슬랙 등은 Make 시나리오에서 연결하면 됩니다. |
-
-녹음이 끝나면 메모 목록에 **녹음 파일을 다시 들을 수 있는 플레이어**가 잠깐 나타날 수 있습니다.
+| **음성 → 글자 (STT)** | 녹음을 **멈춘 뒤** AssemblyAI로 한국어 인식합니다. |
+| **요약 및 상세 회의록** | Gemini를 통해 전사본과 메모를 바탕으로 짧은 요약과 상세한 회의록 구조를 생성합니다. 직접 수정도 가능합니다. |
+| **클라우드 히스토리** | 완성된 회의록과 녹음 파일은 자체 서버(FastAPI)와 데이터베이스에 안전하게 저장되며, 언제든 다시 불러올 수 있습니다. |
+| **이메일 및 외부 전송** | 이메일로 요약 내용을 간편하게 공유할 수 있으며 (자주 쓰는 메일 자동완성), Make.com 웹훅 연동도 지원합니다. |
+| **AI 프롬프트 설정** | 상단 톱니바퀴에서 요약 및 상세 지시문을 변경하고 저장할 수 있습니다. |
 
 👉 “뭘 할 수 있지?”를 해결합니다.
 
@@ -76,44 +252,57 @@ pnpm run dev
 
 ### 기술 스택
 
-- **Next.js** 16, **React** 19, **TypeScript**
-- 스타일: **Tailwind CSS** 4
-- **AssemblyAI** SDK — 서버 API에서 파일 업로드 후 전사
-- **@google/generative-ai** — Gemini **gemini-2.5-flash** 모델, JSON 응답으로 요약·상세 구조 생성
+- **프론트엔드 (화면)**: Next.js 16, React 19, TypeScript, Tailwind CSS 4
+- **백엔드 (서버)**: FastAPI (Python)
+- **데이터베이스 (창고)**: MySQL
+- **인프라 및 배포**: Docker, Oracle Cloud, GitHub Actions
+- **AI API**: AssemblyAI (음성 인식), Google Gemini (요약)
 
-### 폴더 구조 (요약)
+### 주요 폴더 구조 (요약)
 
 ```
 src/
   app/
-    page.tsx                 # 메인 화면·녹음·웹훅 전송 로직
+    page.tsx                 # 메인 화면·녹음·업로드 로직
     layout.tsx
     api/
       assemblyai/transcribe/ # 오디오 → 텍스트
-      assemblyai/token/      # 실시간용 임시 토큰 (현재 메인 화면에서는 미사용)
-      gemini/analyze/        # 전사문+메모 → 요약·상세 JSON
+      gemini/analyze/        # 텍스트+메모 → 요약·상세 JSON
   components/
-    Header.tsx               # 프롬프트 모달, 새로고침, 외부 전송
+    Header.tsx               # 프롬프트 설정, 외부 전송 등
     RecordPanel.tsx          # 녹음·메모 UI
-    TranscriptPanel.tsx      # 전사 / 요약 / 상세 탭
-  lib/prompts.ts             # 기본 프롬프트 문구
-  types/index.ts             # 메모·전사 블록 타입
+    TranscriptPanel.tsx      # 전사 / 요약 / 상세 화면
+  lib/prompts.ts             # 기본 AI 프롬프트
 ```
 
-### 외부 전송(Make) URL 변경
+### 환경 변수 파일 정리
 
-기본 웹훅 주소는 `src/app/page.tsx` 안에 들어 있습니다. 자신의 Make 시나리오 주소로 바꿔 사용하세요.
+| 파일 | 어디서 쓰나 |
+|------|-------------|
+| 프로젝트 맨 위 `.env` | 로컬 Docker / `pnpm run dev` (AI 키, API URL) |
+| `backend/.env` | 로컬에서 백엔드만 `uvicorn` 실행할 때 |
+| 서버 `~/ai_meeting_email/.env` | Oracle 배포 (Git에 올리지 않음) |
 
-### 빌드·배포
+### 배포
+
+로컬·서버 모두 **Docker Compose**를 사용합니다. 자세한 순서는 **「2. 사용 방법 안내」** 를 참고하세요.
 
 ```bash
-pnpm run build
-pnpm run start
+# 로컬 또는 서버 (프로젝트 최상위)
+docker compose up -d --build
 ```
 
-배포는 Vercel 등 Next.js를 지원하는 호스팅에 올리면 됩니다. 서버에 위 환경 변수를 꼭 등록해야 합니다.
+서버(Oracle Cloud)는 RAM이 작아 **`docker compose build backend` → `build frontend` → `up -d`** 순서를 권장합니다.
 
-👉 협업·배포 시 필요한 정보입니다.
+### API 문서 (API 설명서 📖)
+
+백엔드 서버(FastAPI)가 켜진 상태에서 아래 주소로 들어가면, 서버가 어떤 기능들을 제공하는지 한눈에 볼 수 있는 **API 설명서(Swagger)** 가 나옵니다.
+어떤 주소로 요청을 보내야 하는지, 어떤 데이터를 주고받는지 마우스로 클릭해가며 쉽게 테스트해 볼 수 있어요! (마치 식당 메뉴판 같아요 🍔)
+
+- **설명서 주소**: [http://localhost:8000/docs](http://localhost:8000/docs)
+- (서버를 켠 상태에서 브라우저 주소창에 위 주소를 붙여넣으시면 됩니다!)
+
+👉 협업할 때 필수 정보입니다.
 
 ---
 
@@ -129,4 +318,8 @@ pnpm run start
 - **라이선스**: 저장소 정책에 따릅니다.
 - **문의**: 저장소 관리자 또는 이슈 트래커를 이용해 주세요.
 - **업데이트 로그**
-  - README를 실제 코드 기준으로 정리함 (Gemini 요약·상세, AssemblyAI 전사, Make 웹훅 전송, 프롬프트 설정 등).
+  - **v1.4.0**: 로컬/서버 실행 가이드 정리, `.env` 환경별 분리, 배포용 API URL·DB 연결 보완
+  - **v1.3.0**: 회원가입 시 이메일 인증 프로세스 추가 및 로딩 UI(모래시계) 개선
+  - **v1.2.0**: 아키텍처 전면 개편 (Next.js 풀스택 → Next.js + FastAPI + MySQL + Docker)
+  - 자체 데이터베이스(MySQL) 구축 및 연동
+  - Docker Compose를 이용한 원클릭 실행 환경 구성
