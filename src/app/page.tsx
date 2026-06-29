@@ -903,7 +903,7 @@ export default function Home() {
   };
 
   return (
-    <div className="flex flex-col min-h-screen bg-gray-50 text-gray-900 font-sans">
+    <div className="flex flex-1 flex-col min-h-0 bg-gray-50 text-gray-900 font-sans">
       {/* 1. 상단 제목 부분 */}
       <Header
         onRefresh={handleRefresh}

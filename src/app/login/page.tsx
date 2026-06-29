@@ -3,7 +3,7 @@ import AuthPanel from "@/components/AuthPanel";
 
 export default function LoginPage() {
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center bg-gray-50 px-4 py-12">
+    <div className="flex flex-1 flex-col items-center justify-center bg-gray-50 px-4 py-12">
       <Suspense
         fallback={
           <div className="h-48 w-full max-w-md animate-pulse rounded-2xl bg-gray-200" />
