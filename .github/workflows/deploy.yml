@@ -16,13 +16,16 @@ jobs:
           host: ${{ secrets.SERVER_HOST }}
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SERVER_SSH_KEY }}
+          command_timeout: 60m
           script: |
             set -e
             cd ~/ai_meeting_email
-            git fetch origin master
-            git reset --hard origin/master
+
+            # Docker가 만든 변경·권한 문제로 git이 실패하는 경우 대비
+            git checkout -- . || true
+            git pull origin master
+
             docker compose build backend
             docker compose build frontend
-            docker compose up -d --force-recreate --remove-orphans
+            docker compose up -d --force-recreate
             docker compose ps
-            docker image prune -f
