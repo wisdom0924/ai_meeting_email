@@ -75,3 +75,18 @@ class Comment(Base):
     updated_at = Column(DateTime(timezone=True), onupdate=func.now()) # 수정 시간
 
     user = relationship("User") # 사용자 정보와 연결
+
+# 7. AI 프롬프트 설정 (사용자별 요약·상세 지시문)
+class Prompt(Base):
+    __tablename__ = "prompts"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), index=True)
+    name = Column(String(255))
+    summary_prompt = Column(Text)
+    details_prompt = Column(Text)
+    source = Column(String(20), default="user")  # seed | user | recording_end
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    user = relationship("User")

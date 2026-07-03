@@ -120,3 +120,30 @@ class CommentResponse(BaseModel):
     class Config:
         from_attributes = True
 
+# --- [AI 프롬프트 관련 양식] ---
+class PromptCreate(BaseModel):
+    name: str
+    summary_prompt: str
+    details_prompt: str
+    client_key: str
+    source: str = "user"
+
+class PromptUpdate(BaseModel):
+    client_key: str
+    name: Optional[str] = None
+    summary_prompt: Optional[str] = None
+    details_prompt: Optional[str] = None
+
+class PromptResponse(BaseModel):
+    id: str
+    created_at: datetime
+    updated_at: datetime
+    name: str
+    summary_prompt: str
+    details_prompt: str
+    client_key: Optional[str] = None
+    source: str
+
+class PromptListResponse(BaseModel):
+    prompts: List[PromptResponse]
+

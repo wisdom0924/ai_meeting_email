@@ -25,6 +25,8 @@ import { MAX_AUDIO_UPLOAD_BYTES } from "@/lib/audio-upload-limits";
 import { buildTranscriptBlocksFromText } from "@/lib/transcript-blocks";
 import { useAuthStore } from "@/store/auth-store";
 import { API_URL, apiFetch } from "@/lib/api-client";
+import { isUsableRecordingClientKey } from "@/lib/recording-client-key";
+import { createPrompt, shouldSkipAutoPromptSnapshot } from "@/lib/prompts-api";
 
 function toSafeFileNamePart(value: string): string {
   return value
@@ -150,7 +152,7 @@ export default function Home() {
       const clientKeyForServer = recordingClientKeyRef.current;
       let serverRecordingId: string | null = null;
 
-      if (clientKeyForServer && clientKeyForServer.length >= 8) {
+      if (isUsableRecordingClientKey(clientKeyForServer, Boolean(userId))) {
         try {
           const uploadForm = new FormData();
           uploadForm.append("audio", blob, filename);
@@ -187,21 +189,22 @@ export default function Home() {
 
         const snapSummary = localStorage.getItem("summaryPrompt") ?? "";
         const snapDetails = localStorage.getItem("detailsPrompt") ?? "";
-        void fetch("/api/prompts", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
+        const skipAutoSave = await shouldSkipAutoPromptSnapshot(
+          clientKeyForServer,
+          snapSummary,
+          snapDetails
+        );
+        if (!skipAutoSave) {
+          void createPrompt({
             name: promptsName,
             summary_prompt: snapSummary,
             details_prompt: snapDetails,
             client_key: clientKeyForServer,
             source: promptSource,
-          }),
-        })
-          .then((res) => {
-            if (res.ok) setPromptListVersion((v) => v + 1);
           })
-          .catch(() => {});
+            .then(() => setPromptListVersion((v) => v + 1))
+            .catch(() => {});
+        }
       }
 
       const now = new Date();
@@ -344,7 +347,7 @@ export default function Home() {
         setIsTranscribing(false);
       }
     },
-    [setServerListVersion, setPromptListVersion]
+    [setServerListVersion, setPromptListVersion, userId]
   );
 
   const handleAudioFileSelected = useCallback(

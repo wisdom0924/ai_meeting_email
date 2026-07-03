@@ -574,3 +574,145 @@ def update_comment(comment_id: int, comment_update: schemas.CommentUpdate, db: S
     return comment
 
 
+# --- [AI 프롬프트 API (인증 필요)] ---
+
+DEFAULT_SUMMARY_PROMPT = (
+    "회의 내용을 500자 내외로 자연스럽게 요약한 줄글 텍스트. "
+    "(중요한 논의 사항, 결정된 사항, 액션 아이템 중심)"
+)
+DEFAULT_DETAILS_PROMPT = (
+    "회의의 전체적인 흐름과 안건별 세부 논의 사항을 상세하게 정리한 텍스트."
+)
+
+
+def verify_prompt_client_key(client_key: str, current_user: models.User) -> None:
+    if str(current_user.id) != str(client_key):
+        raise HTTPException(
+            status_code=403,
+            detail="client_key가 로그인 사용자와 일치하지 않습니다.",
+        )
+
+
+def prompt_to_response(row: models.Prompt) -> schemas.PromptResponse:
+    updated = row.updated_at or row.created_at
+    return schemas.PromptResponse(
+        id=str(row.id),
+        created_at=row.created_at,
+        updated_at=updated,
+        name=row.name,
+        summary_prompt=row.summary_prompt,
+        details_prompt=row.details_prompt,
+        client_key=str(row.user_id),
+        source=row.source or "user",
+    )
+
+
+def ensure_seed_prompt(db: Session, user_id: int) -> models.Prompt:
+    seed = (
+        db.query(models.Prompt)
+        .filter(models.Prompt.user_id == user_id, models.Prompt.source == "seed")
+        .first()
+    )
+    if seed:
+        return seed
+    seed = models.Prompt(
+        user_id=user_id,
+        name="기본 프롬프트",
+        summary_prompt=DEFAULT_SUMMARY_PROMPT,
+        details_prompt=DEFAULT_DETAILS_PROMPT,
+        source="seed",
+    )
+    db.add(seed)
+    db.commit()
+    db.refresh(seed)
+    return seed
+
+
+@app.get("/api/prompts", response_model=schemas.PromptListResponse)
+def list_prompts(
+    client_key: str,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    verify_prompt_client_key(client_key, current_user)
+    ensure_seed_prompt(db, current_user.id)
+    rows = (
+        db.query(models.Prompt)
+        .filter(models.Prompt.user_id == current_user.id)
+        .order_by(models.Prompt.created_at.desc())
+        .all()
+    )
+    return schemas.PromptListResponse(prompts=[prompt_to_response(r) for r in rows])
+
+
+@app.post("/api/prompts", response_model=dict)
+def create_prompt(
+    body: schemas.PromptCreate,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    verify_prompt_client_key(body.client_key, current_user)
+    source = body.source if body.source in ("seed", "user", "recording_end") else "user"
+    if source == "seed":
+        source = "user"
+    row = models.Prompt(
+        user_id=current_user.id,
+        name=body.name.strip() or "이름 없음",
+        summary_prompt=body.summary_prompt,
+        details_prompt=body.details_prompt,
+        source=source,
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return {"prompt": prompt_to_response(row)}
+
+
+@app.patch("/api/prompts/{prompt_id}", response_model=dict)
+def update_prompt(
+    prompt_id: int,
+    body: schemas.PromptUpdate,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    verify_prompt_client_key(body.client_key, current_user)
+    row = (
+        db.query(models.Prompt)
+        .filter(models.Prompt.id == prompt_id, models.Prompt.user_id == current_user.id)
+        .first()
+    )
+    if not row:
+        raise HTTPException(status_code=404, detail="프롬프트를 찾을 수 없습니다.")
+    if body.name is not None:
+        row.name = body.name.strip() or row.name
+    if body.summary_prompt is not None:
+        row.summary_prompt = body.summary_prompt
+    if body.details_prompt is not None:
+        row.details_prompt = body.details_prompt
+    db.commit()
+    db.refresh(row)
+    return {"prompt": prompt_to_response(row)}
+
+
+@app.delete("/api/prompts/{prompt_id}")
+def delete_prompt(
+    prompt_id: int,
+    client_key: str,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    verify_prompt_client_key(client_key, current_user)
+    row = (
+        db.query(models.Prompt)
+        .filter(models.Prompt.id == prompt_id, models.Prompt.user_id == current_user.id)
+        .first()
+    )
+    if not row:
+        raise HTTPException(status_code=404, detail="프롬프트를 찾을 수 없습니다.")
+    if row.source == "seed":
+        raise HTTPException(status_code=400, detail="기본 프롬프트는 삭제할 수 없습니다.")
+    db.delete(row)
+    db.commit()
+    return {"ok": True}
+
+

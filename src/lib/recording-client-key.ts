@@ -5,6 +5,19 @@ const ANON_SLOT_KEY = "ai_meeting_recordings_v2:anon";
 /** localStorage 금지·용량 초과 시에도 이 탭 세션 안에서는 같은 키를 씁니다. */
 let memoryFallbackKey: string | null = null;
 
+/**
+ * 서버(프롬프트·녹음 등)에 쓸 client_key가 준비됐는지 확인합니다.
+ * 로그인 시 userId는 "1", "2"처럼 짧아도 됩니다. 비로그인 anon 키만 8자 이상 필요.
+ */
+export function isUsableRecordingClientKey(
+  clientKey: string | null | undefined,
+  isLoggedIn: boolean
+): boolean {
+  if (!clientKey) return false;
+  if (isLoggedIn) return /^\d+$/.test(clientKey);
+  return clientKey.length >= 8;
+}
+
 function randomId(): string {
   if (typeof crypto !== "undefined" && crypto.randomUUID) {
     return crypto.randomUUID();
