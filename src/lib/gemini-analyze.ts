@@ -3,6 +3,55 @@ import { deepStripBasicMarkdown } from "@/lib/strip-markdown";
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
 
+function parseModelJson(responseText: string): unknown {
+  const trimmed = responseText.trim();
+  try {
+    return JSON.parse(trimmed);
+  } catch {
+    const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i);
+    if (fenced?.[1]) {
+      return JSON.parse(fenced[1].trim());
+    }
+    const objectMatch = trimmed.match(/\{[\s\S]*\}/);
+    if (objectMatch?.[0]) {
+      return JSON.parse(objectMatch[0]);
+    }
+    throw new Error("AI 응답을 JSON으로 읽지 못했어요.");
+  }
+}
+
+export function formatGeminiAnalyzeError(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+
+  if (message.includes("GEMINI_API_KEY missing")) {
+    return "Gemini API 키가 설정되지 않았습니다. .env 파일에 GEMINI_API_KEY를 추가해주세요.";
+  }
+  if (
+    message.includes("API_KEY_INVALID") ||
+    message.includes("API key not valid")
+  ) {
+    return "Gemini API 키가 올바르지 않아요. 서버 .env의 GEMINI_API_KEY를 다시 확인해 주세요.";
+  }
+  if (
+    message.includes("429") ||
+    message.includes("RESOURCE_EXHAUSTED") ||
+    message.includes("quota")
+  ) {
+    return "Gemini 사용 한도를 초과했어요. 잠시 후 다시 시도해 주세요.";
+  }
+  if (
+    message.includes("JSON") ||
+    message.includes("AI 응답을 JSON으로 읽지 못했어요")
+  ) {
+    return "AI가 만든 답을 읽는 중 문제가 났어요. 같은 파일로 다시 시도해 주세요.";
+  }
+  if (message.includes("fetch failed") || message.includes("ECONNREFUSED")) {
+    return "Gemini 서버에 연결하지 못했어요. 인터넷 연결과 서버 방화벽을 확인해 주세요.";
+  }
+
+  return "회의록을 분석하고 요약하는 중 문제가 발생했습니다.";
+}
+
 export type AnalyzeMeetingResult = {
   summary?: string;
   details?: unknown;
@@ -85,8 +134,18 @@ ${memos ? memos : "작성된 메모가 없습니다."}`;
     },
   });
 
-  const responseText = result.response.text();
-  const resultJson = JSON.parse(responseText);
+  let responseText: string;
+  try {
+    responseText = result.response.text();
+  } catch {
+    throw new Error("AI가 요약 결과를 돌려주지 않았어요. 내용이 너무 짧거나 차단되었을 수 있어요.");
+  }
+
+  if (!responseText.trim()) {
+    throw new Error("AI 응답이 비어 있어요.");
+  }
+
+  const resultJson = parseModelJson(responseText);
 
   return deepStripBasicMarkdown(resultJson) as AnalyzeMeetingResult;
 }

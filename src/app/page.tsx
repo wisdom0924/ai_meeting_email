@@ -62,6 +62,24 @@ function toIsoFromFileLastModified(lastModified: number): string | null {
   return d.toISOString();
 }
 
+type AudioJobOptions = {
+  blob: Blob;
+  filename: string;
+  systemMemoText: string;
+  promptsName: string;
+  promptSource: "recording_end" | "user";
+  recordedAtIso?: string | null;
+};
+
+type AnalyzeRetryContext = {
+  text: string;
+  recordedAtIso: string | null;
+  transcriptBlocks: TranscriptBlock[];
+  filename: string;
+};
+
+type PipelineFailureKind = "transcribe" | "analyze" | "network";
+
 export default function Home() {
   const [memos, setMemos] = useState<Memo[]>([]);
   const memosRef = useRef<Memo[]>([]);
@@ -77,6 +95,9 @@ export default function Home() {
   const [transcript, setTranscript] = useState(""); // 변환 중인 상태 메시지
   const [fullTranscript, setFullTranscript] = useState<TranscriptBlock[]>([]); // 완전히 끝난 문장들 모음
   const [isTranscribing, setIsTranscribing] = useState(false); // AI가 글자로 바꾸고 있는지 확인하는 마크
+  const [pipelineError, setPipelineError] = useState<string | null>(null);
+  const [pipelineFailureKind, setPipelineFailureKind] =
+    useState<PipelineFailureKind | null>(null);
   const [summary, setSummary] = useState(""); // 500자 요약 데이터 상태 저장공간 추가
   const [details, setDetails] = useState<any>(null); // 상세 회의록 데이터 상태 추가
   const [isSending, setIsSending] = useState(false); // 웹훅 전송 상태 추가
@@ -104,6 +125,8 @@ export default function Home() {
 
   const recordingClientKeyRef = useRef("");
   const recordingStartedAtRef = useRef<string | null>(null);
+  const lastAudioJobRef = useRef<AudioJobOptions | null>(null);
+  const analyzeRetryContextRef = useRef<AnalyzeRetryContext | null>(null);
   useEffect(() => {
     recordingClientKeyRef.current = recordingClientKey;
   }, [recordingClientKey]);
@@ -131,15 +154,92 @@ export default function Home() {
     [memos]
   );
 
+  const runMeetingAnalysis = useCallback(
+    async (ctx: AnalyzeRetryContext) => {
+      const summaryPrompt = localStorage.getItem("summaryPrompt");
+      const detailsPrompt = localStorage.getItem("detailsPrompt");
+      const userMemos = memosRef.current
+        .filter((m) => m.type !== "system")
+        .map((m) => `[${m.time}] ${m.text}`)
+        .join("\n");
+
+      const analyzeResponse = await fetch("/api/gemini/analyze", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          text: ctx.text,
+          memos: userMemos,
+          summaryPrompt,
+          detailsPrompt,
+        }),
+      });
+
+      if (analyzeResponse.status === 401 || analyzeResponse.status === 503) {
+        const errJson = (await analyzeResponse.json().catch(() => ({}))) as {
+          error?: string;
+        };
+        throw new Error(
+          errJson.error ?? "요약을 만들려면 로그인이 필요해요."
+        );
+      }
+
+      const analyzeData = await analyzeResponse.json();
+
+      if (analyzeData.error) {
+        throw new Error(analyzeData.error);
+      }
+
+      if (analyzeData.summary) setSummary(analyzeData.summary);
+      if (analyzeData.details) {
+        setDetails(
+          withDefaultMeetingDateTime(
+            analyzeData.details,
+            ctx.recordedAtIso ?? null
+          )
+        );
+      }
+      setTranscript("");
+      setPipelineError(null);
+      setPipelineFailureKind(null);
+      analyzeRetryContextRef.current = null;
+
+      if (userId && accessToken) {
+        const detailsToSave =
+          analyzeData.details != null
+            ? withDefaultMeetingDateTime(
+                analyzeData.details,
+                ctx.recordedAtIso ?? null
+              )
+            : null;
+
+        const fullTranscriptText = ctx.transcriptBlocks
+          .map((b) => `[${b.time}] ${b.text}`)
+          .join("\n");
+
+        void apiFetch(`${API_URL}/api/users/${userId}/meetings`, {
+          method: "POST",
+          body: JSON.stringify({
+            title: ctx.filename || "새 회의록",
+            transcript: fullTranscriptText,
+            summary: analyzeData.summary ?? "",
+            details: detailsToSave ? JSON.stringify(detailsToSave) : null,
+          }),
+        })
+          .then((res) => {
+            if (res.ok) setServerListVersion((v) => v + 1);
+          })
+          .catch((err) => console.error("FastAPI 저장 에러:", err));
+      }
+    },
+    [accessToken, userId]
+  );
+
   const processAudioBlob = useCallback(
-    async (opts: {
-      blob: Blob;
-      filename: string;
-      systemMemoText: string;
-      promptsName: string;
-      promptSource: "recording_end" | "user";
-      recordedAtIso?: string | null;
-    }) => {
+    async (
+      opts: AudioJobOptions,
+      retryOpts?: { skipPrep?: boolean }
+    ) => {
       const {
         blob,
         filename,
@@ -148,11 +248,16 @@ export default function Home() {
         promptSource,
         recordedAtIso,
       } = opts;
+      lastAudioJobRef.current = opts;
+      analyzeRetryContextRef.current = null;
+      setPipelineError(null);
+      setPipelineFailureKind(null);
+
       const audioUrl = URL.createObjectURL(blob);
       const clientKeyForServer = recordingClientKeyRef.current;
       let serverRecordingId: string | null = null;
 
-      if (isUsableRecordingClientKey(clientKeyForServer, Boolean(userId))) {
+      if (isUsableRecordingClientKey(clientKeyForServer, Boolean(userId)) && !retryOpts?.skipPrep) {
         try {
           const uploadForm = new FormData();
           uploadForm.append("audio", blob, filename);
@@ -207,20 +312,22 @@ export default function Home() {
         }
       }
 
-      const now = new Date();
-      setMemos((prev) => [
-        ...prev,
-        {
-          id: Date.now(),
-          text: systemMemoText,
-          time: now.toLocaleTimeString("ko-KR", {
-            hour: "2-digit",
-            minute: "2-digit",
-          }),
-          audioUrl: audioUrl,
-          type: "system",
-        },
-      ]);
+      if (!retryOpts?.skipPrep) {
+        const now = new Date();
+        setMemos((prev) => [
+          ...prev,
+          {
+            id: Date.now(),
+            text: systemMemoText,
+            time: now.toLocaleTimeString("ko-KR", {
+              hour: "2-digit",
+              minute: "2-digit",
+            }),
+            audioUrl: audioUrl,
+            type: "system",
+          },
+        ]);
+      }
 
       try {
         setIsTranscribing(true);
@@ -241,10 +348,11 @@ export default function Home() {
           const errJson = (await response.json().catch(() => ({}))) as {
             error?: string;
           };
-          setTranscript(
-            errJson.error ??
-              "이 기능을 쓰려면 로그인이 필요해요."
+          setTranscript("");
+          setPipelineError(
+            errJson.error ?? "이 기능을 쓰려면 로그인이 필요해요."
           );
+          setPipelineFailureKind("transcribe");
           setIsTranscribing(false);
           return;
         }
@@ -252,7 +360,11 @@ export default function Home() {
         const data = await response.json();
 
         if (data.error) {
-          setTranscript("앗, 글자로 바꾸는 중에 문제가 생겼어요: " + data.error);
+          setTranscript("");
+          setPipelineError(
+            "앗, 글자로 바꾸는 중에 문제가 생겼어요: " + data.error
+          );
+          setPipelineFailureKind("transcribe");
           setIsTranscribing(false);
           return;
         }
@@ -263,92 +375,92 @@ export default function Home() {
           data.words
         );
 
-        setFullTranscript((prev) => [...prev, ...newBlocks]);
+        setFullTranscript((prev) =>
+          retryOpts?.skipPrep ? newBlocks : [...prev, ...newBlocks]
+        );
         setTranscript(
           "회의 내용을 바탕으로 요약본과 상세 회의록을 만들고 있어요! (약 10초 소요)"
         );
 
-        const summaryPrompt = localStorage.getItem("summaryPrompt");
-        const detailsPrompt = localStorage.getItem("detailsPrompt");
+        const analyzeContext: AnalyzeRetryContext = {
+          text: data.text,
+          recordedAtIso: recordedAtIso ?? null,
+          transcriptBlocks: newBlocks,
+          filename,
+        };
+        analyzeRetryContextRef.current = analyzeContext;
 
-        const userMemos = memosRef.current
-          .filter((m) => m.type !== "system")
-          .map((m) => `[${m.time}] ${m.text}`)
-          .join("\n");
-
-        const analyzeResponse = await fetch("/api/gemini/analyze", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          credentials: "include",
-          body: JSON.stringify({
-            text: data.text,
-            memos: userMemos,
-            summaryPrompt,
-            detailsPrompt,
-          }),
-        });
-
-        if (analyzeResponse.status === 401 || analyzeResponse.status === 503) {
-          const errJson = (await analyzeResponse.json().catch(() => ({}))) as {
-            error?: string;
-          };
-          setTranscript(
-            errJson.error ??
-              "요약을 만들려면 로그인이 필요해요."
-          );
-          setIsTranscribing(false);
-          return;
-        }
-
-        const analyzeData = await analyzeResponse.json();
-
-        if (analyzeData.error) {
-          setTranscript("요약본을 만드는 중에 문제가 생겼어요: " + analyzeData.error);
-        } else {
-          if (analyzeData.summary) setSummary(analyzeData.summary);
-          if (analyzeData.details) {
-            setDetails(
-              withDefaultMeetingDateTime(analyzeData.details, recordedAtIso ?? null)
-            );
-          }
+        try {
+          await runMeetingAnalysis(analyzeContext);
+        } catch (error) {
+          const message =
+            error instanceof Error
+              ? error.message
+              : "회의록을 분석하고 요약하는 중 문제가 발생했습니다.";
           setTranscript("");
-
-          // FastAPI 서버에 회의록 저장하기!
-          if (userId && accessToken) {
-            const detailsToSave =
-              analyzeData.details != null
-                ? withDefaultMeetingDateTime(
-                    analyzeData.details,
-                    recordedAtIso ?? null
-                  )
-                : null;
-
-            const fullTranscriptText = newBlocks.map(b => `[${b.time}] ${b.text}`).join("\n");
-
-            void apiFetch(`${API_URL}/api/users/${userId}/meetings`, {
-              method: "POST",
-              body: JSON.stringify({
-                title: filename || "새 회의록",
-                transcript: fullTranscriptText,
-                summary: analyzeData.summary ?? "",
-                details: detailsToSave ? JSON.stringify(detailsToSave) : null,
-              }),
-            })
-              .then((res) => {
-                if (res.ok) setServerListVersion((v) => v + 1);
-              })
-              .catch((err) => console.error("FastAPI 저장 에러:", err));
-          }
+          setPipelineError(`요약본을 만드는 중에 문제가 생겼어요: ${message}`);
+          setPipelineFailureKind("analyze");
         }
       } catch (error) {
         console.error("변환 요청 실패:", error);
-        setTranscript("서버와 통신하는 데 실패했어요.");
+        setTranscript("");
+        setPipelineError("서버와 통신하는 데 실패했어요.");
+        setPipelineFailureKind("network");
       } finally {
         setIsTranscribing(false);
       }
     },
-    [setServerListVersion, setPromptListVersion, userId]
+    [runMeetingAnalysis, setServerListVersion, setPromptListVersion, userId]
   );
+
+  const handleRetryPipeline = useCallback(async () => {
+    if (isTranscribing) return;
+
+    if (pipelineFailureKind === "analyze") {
+      const ctx = analyzeRetryContextRef.current;
+      if (!ctx) return;
+
+      setPipelineError(null);
+      setTranscript(
+        "회의 내용을 바탕으로 요약본과 상세 회의록을 만들고 있어요! (약 10초 소요)"
+      );
+      setIsTranscribing(true);
+      try {
+        await runMeetingAnalysis(ctx);
+      } catch (error) {
+        const message =
+          error instanceof Error
+            ? error.message
+            : "회의록을 분석하고 요약하는 중 문제가 발생했습니다.";
+        setTranscript("");
+        setPipelineError(`요약본을 만드는 중에 문제가 생겼어요: ${message}`);
+        setPipelineFailureKind("analyze");
+      } finally {
+        setIsTranscribing(false);
+      }
+      return;
+    }
+
+    const job = lastAudioJobRef.current;
+    if (!job) return;
+
+    setPipelineError(null);
+    setTranscript("");
+    setSummary("");
+    setDetails(null);
+    setFullTranscript([]);
+    await processAudioBlob(job, { skipPrep: true });
+  }, [
+    isTranscribing,
+    pipelineFailureKind,
+    processAudioBlob,
+    runMeetingAnalysis,
+  ]);
+
+  const retryPipelineLabel =
+    pipelineFailureKind === "analyze"
+      ? "요약 다시 만들기"
+      : "음성 변환 다시 시도";
 
   const handleAudioFileSelected = useCallback(
     async (file: File) => {
@@ -372,6 +484,8 @@ export default function Home() {
       }
       const label = file.name?.trim() || "audio";
       setTranscript("");
+      setPipelineError(null);
+      setPipelineFailureKind(null);
       setSummary("");
       setDetails(null);
       await processAudioBlob({
@@ -937,6 +1051,8 @@ export default function Home() {
               : null
           );
           setTranscript("");
+          setPipelineError(null);
+          setPipelineFailureKind(null);
         }}
       />
 
@@ -978,6 +1094,11 @@ export default function Home() {
               details={details}
               onDetailsChange={setDetails}
               onShareToBoard={handleShareToBoard}
+              pipelineError={pipelineError}
+              onRetryPipeline={
+                pipelineError && pipelineFailureKind ? handleRetryPipeline : undefined
+              }
+              retryPipelineLabel={retryPipelineLabel}
             />
           </div>
           <div className="shrink-0 w-full">

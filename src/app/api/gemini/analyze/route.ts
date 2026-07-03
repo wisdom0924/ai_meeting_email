@@ -1,5 +1,8 @@
 import { NextResponse } from "next/server";
-import { analyzeMeetingContent } from "@/lib/gemini-analyze";
+import {
+  analyzeMeetingContent,
+  formatGeminiAnalyzeError,
+} from "@/lib/gemini-analyze";
 import { requireAuthenticatedUserForApi } from "@/lib/require-authenticated-user";
 
 export async function POST(request: Request) {
@@ -33,7 +36,7 @@ export async function POST(request: Request) {
   } catch (error) {
     console.error("Gemini 요약 에러:", error);
     return NextResponse.json(
-      { error: "회의록을 분석하고 요약하는 중 문제가 발생했습니다." },
+      { error: formatGeminiAnalyzeError(error) },
       { status: 500 }
     );
   }

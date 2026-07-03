@@ -9,6 +9,7 @@ import {
   type ComponentPropsWithoutRef,
 } from "react";
 import { TranscriptBlock } from "@/types";
+import PipelineErrorBanner from "@/components/PipelineErrorBanner";
 
 /** 안쪽 스크롤·리사이즈 없이 줄 수만큼 높이 확장 (페이지는 바깥 한 번만 스크롤) */
 function AutosizeTextarea({
@@ -52,6 +53,9 @@ interface TranscriptPanelProps {
   onDetailsChange: (next: any) => void;
   /** 게시판 공유 버튼 클릭 시 호출 */
   onShareToBoard?: () => void;
+  pipelineError?: string | null;
+  onRetryPipeline?: () => void;
+  retryPipelineLabel?: string;
 }
 
 /** 녹음 타이머 등으로 부모가 자주 리렌더돼도, 요약 문자열이 같으면 다시 그리지 않음 → textarea 줄바꿈 유지 */
@@ -332,6 +336,9 @@ export default function TranscriptPanel({
   details,
   onDetailsChange,
   onShareToBoard,
+  pipelineError,
+  onRetryPipeline,
+  retryPipelineLabel,
 }: TranscriptPanelProps) {
   const [activeTab, setActiveTab] = useState<
     "transcript" | "summary" | "details"
@@ -386,6 +393,15 @@ export default function TranscriptPanel({
               )}
 
             <div className="space-y-6 text-gray-800 font-light leading-relaxed pb-8">
+              {pipelineError ? (
+                <PipelineErrorBanner
+                  message={pipelineError}
+                  onRetry={onRetryPipeline}
+                  retryLabel={retryPipelineLabel}
+                  retrying={isTranscribing}
+                />
+              ) : null}
+
               {fullTranscript.map((block) => (
                 <div key={block.id} className="flex gap-4 group">
                   <div className="text-xs text-gray-400 font-mono pt-1 min-w-[5.25rem] flex-shrink-0 tabular-nums">
