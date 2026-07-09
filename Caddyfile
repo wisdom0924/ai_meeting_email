@@ -1,0 +1,29 @@
+# HTTPS 문지기 (마이크 녹음용)
+# PUBLIC_HOST = 서버 공인 IP 또는 도메인 (예: 132.145.122.224)
+#
+# http → https 로 자동 이동
+http://{$PUBLIC_HOST} {
+	redir https://{$PUBLIC_HOST}{uri} permanent
+}
+
+# https (자체 서명 인증서 — 브라우저에 경고가 한 번 뜹니다)
+https://{$PUBLIC_HOST} {
+	tls internal
+
+	# Next.js 전용 API (음성→글자, Gemini, 웹훅, 프롬프트·녹음 프록시)
+	@next_api path /api/assemblyai* /api/gemini* /api/meeting-webhook* /api/prompts* /api/recordings*
+	handle @next_api {
+		reverse_proxy frontend:3000
+	}
+
+	# FastAPI (로그인·게시판·회의록·이메일 인증 등)
+	@backend path /api* /docs* /openapi.json /redoc*
+	handle @backend {
+		reverse_proxy backend:8000
+	}
+
+	# Next.js 웹사이트 (화면)
+	handle {
+		reverse_proxy frontend:3000
+	}
+}

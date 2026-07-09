@@ -49,5 +49,5 @@ jobs:
             cd ~/ai_meeting_email
             docker compose build backend
             docker compose build frontend
-            docker compose up -d --force-recreate
+            docker compose --profile https up -d --force-recreate
             docker compose ps

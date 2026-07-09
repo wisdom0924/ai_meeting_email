@@ -53,6 +53,29 @@ services:
       - backend
     restart: always
 
+  # 4. HTTPS 문지기 (서버에서 마이크 녹음하려면 필요)
+  # PUBLIC_HOST=서버IP 를 .env에 넣고, NEXT_PUBLIC_API_URL=https://서버IP 로 맞춘 뒤 사용
+  caddy:
+    image: caddy:2-alpine
+    container_name: ai_meeting_caddy
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      - PUBLIC_HOST=${PUBLIC_HOST:-localhost}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - frontend
+      - backend
+    restart: always
+    profiles:
+      - https
+
 # 창고 데이터를 영원히 보관하기 위한 설정
 volumes:
   db_data:
+  caddy_data:
+  caddy_config:
