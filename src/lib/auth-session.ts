@@ -21,12 +21,31 @@ function isBrowser(): boolean {
 function setAuthCookie(token: string): void {
   if (!isBrowser()) return;
   // JWT는 쿠키에 그대로 저장 (미들웨어·API 라우트에서 읽음)
-  document.cookie = `${TOKEN_KEY}=${token}; path=/; max-age=${COOKIE_MAX_AGE_SEC}; SameSite=Lax`;
+  // HTTPS(서버 마이크용)에서는 Secure를 붙여 브라우저가 쿠키를 더 잘 유지하게 합니다.
+  const secure =
+    window.location.protocol === "https:" ? "; Secure" : "";
+  document.cookie = `${TOKEN_KEY}=${token}; path=/; max-age=${COOKIE_MAX_AGE_SEC}; SameSite=Lax${secure}`;
 }
 
 function clearAuthCookie(): void {
   if (!isBrowser()) return;
+  // Secure 쿠키는 Secure 플래그로 지워야 함
+  const secure =
+    window.location.protocol === "https:" ? "; Secure" : "";
+  document.cookie = `${TOKEN_KEY}=; path=/; max-age=0; SameSite=Lax${secure}`;
   document.cookie = `${TOKEN_KEY}=; path=/; max-age=0; SameSite=Lax`;
+}
+
+/** 미들웨어가 쓰는 access_token 쿠키 값 */
+export function getAuthCookieToken(): string | null {
+  if (!isBrowser()) return null;
+  for (const part of document.cookie.split(";")) {
+    const trimmed = part.trim();
+    if (!trimmed.startsWith(`${TOKEN_KEY}=`)) continue;
+    const value = trimmed.slice(TOKEN_KEY.length + 1);
+    return value.length > 0 ? decodeURIComponent(value) : null;
+  }
+  return null;
 }
 
 export function saveAuthSession(session: AuthSession): void {
@@ -90,18 +109,12 @@ export function clearAuthSession(): void {
 
 export function getAccessToken(): string | null {
   if (!isBrowser()) return null;
-  return localStorage.getItem(TOKEN_KEY);
+  return localStorage.getItem(TOKEN_KEY) || getAuthCookieToken();
 }
 
 /** 미들웨어·글쓰기와 동일하게 쿠키 기준으로 로그인 여부 판단 */
 export function hasAuthCookie(): boolean {
-  if (!isBrowser()) return false;
-  return document.cookie.split(";").some((part) => {
-    const trimmed = part.trim();
-    if (!trimmed.startsWith(`${TOKEN_KEY}=`)) return false;
-    const value = trimmed.slice(TOKEN_KEY.length + 1);
-    return value.length > 0;
-  });
+  return getAuthCookieToken() !== null;
 }
 
 /** 글쓰기 등 보호 기능에 실제로 사용 가능한 세션인지 (부수 효과 없음) */

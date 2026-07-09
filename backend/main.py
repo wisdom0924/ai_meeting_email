@@ -306,6 +306,17 @@ def login(user: schemas.UserCreate, db: Session = Depends(get_db)):
         "nickname": db_user.nickname
     }
 
+
+@app.get("/api/me")
+def get_me(current_user: models.User = Depends(get_current_user)):
+    """쿠키/토큰만 있을 때 헤더에 닉네임을 다시 채우기 위한 내 정보 API"""
+    return {
+        "user_id": current_user.id,
+        "email": current_user.email,
+        "nickname": current_user.nickname,
+    }
+
+
 # --- [회의록 API (인증 필요)] ---
 
 # 1. 새 회의록 저장하기

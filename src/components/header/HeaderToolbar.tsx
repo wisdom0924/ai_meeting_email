@@ -21,7 +21,7 @@ export default function HeaderToolbar({
   isSending,
   onRecordingHistory,
 }: HeaderToolbarProps) {
-  const { isLoggedIn, email: userEmail, nickname: userNickname, clearSession } =
+  const { isLoggedIn, isHydrated, email: userEmail, nickname: userNickname, clearSession } =
     useAuthStore();
   const [signingOut, setSigningOut] = useState(false);
 
@@ -134,7 +134,7 @@ export default function HeaderToolbar({
             )}
           </button>
         )}
-        {isLoggedIn && (
+        {isHydrated && isLoggedIn ? (
           <div className="flex min-w-0 max-w-[min(100%,14rem)] items-center gap-2 sm:max-w-xs">
             {userNickname || userEmail ? (
               <span
@@ -154,7 +154,15 @@ export default function HeaderToolbar({
               {signingOut ? "나가는 중…" : "로그아웃"}
             </button>
           </div>
-        )}
+        ) : isHydrated ? (
+          <Link
+            href="/login"
+            className="inline-flex shrink-0 items-center rounded-lg border border-gray-900 bg-gray-900 px-2.5 py-2 text-xs font-medium text-white hover:bg-gray-800 sm:px-3"
+            title="로그인"
+          >
+            로그인
+          </Link>
+        ) : null}
         <button
           onClick={onPromptSettingsOpen}
           className="p-2 text-gray-400 hover:text-gray-900 transition-colors"
