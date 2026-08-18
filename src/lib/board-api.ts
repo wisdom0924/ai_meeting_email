@@ -1,4 +1,11 @@
-import { API_URL, apiFetch, apiJson, publicJson } from "@/lib/api-client";
+import { apiFetch, apiJson, publicJson } from "@/lib/api-client";
+
+/**
+ * 공유방은 브라우저가 같은 사이트(/api/...)로 요청합니다.
+ * Next.js가 FastAPI로 넘겨 줘서, 서버 HTTPS·포트3000 접속에서도
+ * "Failed to fetch"가 나지 않게 합니다.
+ */
+const BOARD_API = "/api";
 
 export interface Board {
   id: number;
@@ -37,7 +44,7 @@ export async function fetchBoards(
   keyword?: string,
   tag?: string
 ): Promise<BoardListResponse> {
-  let url = `${API_URL}/api/boards?page=${page}&size=${size}`;
+  let url = `${BOARD_API}/boards?page=${page}&size=${size}`;
   if (keyword) url += `&keyword=${encodeURIComponent(keyword)}`;
   if (tag) url += `&tag=${encodeURIComponent(tag)}`;
 
@@ -49,7 +56,7 @@ export async function fetchBoards(
 }
 
 export async function fetchBoard(id: number, password?: string): Promise<Board> {
-  let url = `${API_URL}/api/boards/${id}`;
+  let url = `${BOARD_API}/boards/${id}`;
   if (password) url += `?password=${encodeURIComponent(password)}`;
 
   return publicJson<Board>(url, {}, "게시글을 불러오지 못했습니다.");
@@ -64,7 +71,7 @@ export async function createBoard(
   tags?: string
 ): Promise<Board> {
   return apiJson<Board>(
-    `${API_URL}/api/boards`,
+    `${BOARD_API}/boards`,
     {
       method: "POST",
       body: JSON.stringify({ title, content, meeting_id, is_private, password, tags }),
@@ -88,7 +95,7 @@ export async function updateBoard(
   if (tags !== undefined) body.tags = tags;
 
   return apiJson<Board>(
-    `${API_URL}/api/boards/${id}`,
+    `${BOARD_API}/boards/${id}`,
     {
       method: "PUT",
       body: JSON.stringify(body),
@@ -99,7 +106,7 @@ export async function updateBoard(
 
 export async function deleteBoard(id: number): Promise<{ message: string }> {
   return apiJson<{ message: string }>(
-    `${API_URL}/api/boards/${id}`,
+    `${BOARD_API}/boards/${id}`,
     { method: "DELETE" },
     "게시글을 삭제하지 못했습니다."
   );
@@ -107,7 +114,7 @@ export async function deleteBoard(id: number): Promise<{ message: string }> {
 
 export async function fetchComments(boardId: number): Promise<Comment[]> {
   return publicJson<Comment[]>(
-    `${API_URL}/api/boards/${boardId}/comments`,
+    `${BOARD_API}/boards/${boardId}/comments`,
     {},
     "댓글을 불러오지 못했습니다."
   );
@@ -118,7 +125,7 @@ export async function createComment(
   content: string
 ): Promise<Comment> {
   return apiJson<Comment>(
-    `${API_URL}/api/boards/${boardId}/comments`,
+    `${BOARD_API}/boards/${boardId}/comments`,
     {
       method: "POST",
       body: JSON.stringify({ content }),
@@ -131,7 +138,7 @@ export async function deleteComment(
   commentId: number
 ): Promise<{ message: string }> {
   return apiJson<{ message: string }>(
-    `${API_URL}/api/comments/${commentId}`,
+    `${BOARD_API}/comments/${commentId}`,
     { method: "DELETE" },
     "댓글을 삭제하지 못했습니다."
   );
@@ -142,7 +149,7 @@ export async function updateComment(
   content: string
 ): Promise<Comment> {
   return apiJson<Comment>(
-    `${API_URL}/api/comments/${commentId}`,
+    `${BOARD_API}/comments/${commentId}`,
     {
       method: "PUT",
       body: JSON.stringify({ content }),

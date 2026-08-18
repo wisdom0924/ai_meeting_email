@@ -16,8 +16,10 @@ http://{$PUBLIC_HOST} {
 https://{$PUBLIC_HOST} {
 	tls internal
 
-	# Next.js 전용 API (음성→글자, Gemini, 웹훅, 프롬프트·녹음 프록시)
-	@next_api path /api/assemblyai* /api/gemini* /api/meeting-webhook* /api/prompts* /api/recordings*
+	# Next.js 전용 API (음성→글자, Gemini, 웹훅, 프롬프트·녹음·공유방 프록시)
+	# 공유방(/api/boards·/api/comments)도 Next를 거치면
+	# 브라우저가 백엔드를 직접 치지 않아 Failed to fetch 를 피합니다.
+	@next_api path /api/assemblyai* /api/gemini* /api/meeting-webhook* /api/prompts* /api/recordings* /api/boards* /api/comments*
 	handle @next_api {
 		reverse_proxy frontend:3000
 	}

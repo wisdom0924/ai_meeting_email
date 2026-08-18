@@ -117,10 +117,12 @@ app = FastAPI(
 )
 
 # CORS 설정 (프론트엔드에서 백엔드로 요청을 보낼 수 있게 허락해주는 설정)
+# allow_origins=["*"] 와 allow_credentials=True 를 같이 쓰면
+# 브라우저가 응답을 거절할 수 있어서 credentials는 끕니다.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], # 프론트엔드 주소 허락!
-    allow_credentials=True,
+    allow_origins=["*"],  # 프론트엔드 주소 허락!
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
