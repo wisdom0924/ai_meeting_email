@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useSearchParams } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useAuthStore } from "@/store/auth-store";
 import { hasAuthCookie, syncAuthSessionFromStorage } from "@/lib/auth-session";
 
@@ -9,6 +9,8 @@ type Mode = "signin" | "signup";
 
 export default function AuthPanel() {
   const searchParams = useSearchParams();
+  const router = useRouter();
+  const pathname = usePathname();
   const setSession = useAuthStore((s) => s.setSession);
 
   const [mode, setMode] = useState<Mode>("signin");
@@ -21,6 +23,14 @@ export default function AuthPanel() {
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   const urlError = searchParams.get("error");
+
+  const clearUrlError = () => {
+    if (!searchParams.get("error")) return;
+    const next = new URLSearchParams(searchParams.toString());
+    next.delete("error");
+    const query = next.toString();
+    router.replace(query ? `${pathname}?${query}` : pathname);
+  };
 
   // localStorage에만 세션이 남아 있는 경우 쿠키 동기화 후 원래 페이지로
   useEffect(() => {
@@ -60,6 +70,8 @@ export default function AuthPanel() {
   }, [mode, successMessage, email]);
 
   const displayError = (() => {
+    // 가입 성공 안내가 있을 때는 예전 "로그인 만료" 빨간 글씨를 숨깁니다.
+    if (successMessage) return null;
     if (message) return message;
     if (!urlError) return null;
     if (urlError === "auth") {
@@ -76,6 +88,7 @@ export default function AuthPanel() {
     e.preventDefault();
     setMessage(null);
     setSuccessMessage(null);
+    clearUrlError();
     setLoading(true);
     
     try {
@@ -175,6 +188,7 @@ export default function AuthPanel() {
               setMode("signin");
               setMessage(null);
               setSuccessMessage(null);
+              clearUrlError();
             }}
             className={`flex-1 rounded-md py-2 text-sm font-medium transition-colors ${
               mode === "signin"
@@ -190,6 +204,7 @@ export default function AuthPanel() {
               setMode("signup");
               setMessage(null);
               setSuccessMessage(null);
+              clearUrlError();
             }}
             className={`flex-1 rounded-md py-2 text-sm font-medium transition-colors ${
               mode === "signup"
