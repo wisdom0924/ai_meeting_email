@@ -1,15 +1,30 @@
-import { GoogleGenerativeAI } from "@google/generative-ai";
 import { deepStripBasicMarkdown } from "@/lib/strip-markdown";
 
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
+const GEMINI_GENERATE_URL =
+  "https://generativelanguage.googleapis.com/v1beta/models";
 
-/** 2.5 Flash는 신규 API 키에서 404가 나는 경우가 많아, 최신 Flash부터 시도합니다. */
+/** 신규 키에서 2.5가 막히는 경우가 많아, 가벼운 최신 Flash부터 시도합니다. */
 const DEFAULT_GEMINI_MODELS = [
+  "gemini-3.1-flash-lite",
   "gemini-3.6-flash",
   "gemini-3.5-flash",
   "gemini-flash-latest",
+  "gemini-2.5-flash-lite",
   "gemini-2.5-flash",
 ] as const;
+
+type GeminiPart = {
+  text?: string;
+  thought?: boolean;
+};
+
+type GeminiResponse = {
+  error?: { message?: string; status?: string; code?: number };
+  candidates?: Array<{
+    finishReason?: string;
+    content?: { parts?: GeminiPart[] };
+  }>;
+};
 
 function getGeminiModelCandidates(): string[] {
   const fromEnv = process.env.GEMINI_MODEL?.trim();
@@ -19,13 +34,30 @@ function getGeminiModelCandidates(): string[] {
   return [...new Set(models)];
 }
 
+function extractGeminiErrorMessage(error: unknown): string {
+  if (error instanceof Error && error.message.trim()) return error.message;
+  if (typeof error === "string" && error.trim()) return error;
+  return "";
+}
+
 function isUnavailableModelError(error: unknown): boolean {
-  const message = error instanceof Error ? error.message : String(error);
+  const message = extractGeminiErrorMessage(error).toLowerCase();
   return (
     message.includes("404") ||
-    message.includes("NOT_FOUND") ||
+    message.includes("not_found") ||
     message.includes("not found") ||
-    message.includes("no longer available")
+    message.includes("no longer available") ||
+    message.includes("not supported")
+  );
+}
+
+function isInvalidThinkingConfigError(error: unknown): boolean {
+  const message = extractGeminiErrorMessage(error).toLowerCase();
+  return (
+    message.includes("thinking") ||
+    message.includes("thinkingconfig") ||
+    message.includes("thinkinglevel") ||
+    message.includes("thinkingbudget")
   );
 }
 
@@ -46,8 +78,70 @@ function parseModelJson(responseText: string): unknown {
   }
 }
 
+function extractResponseText(data: GeminiResponse): string {
+  const parts = data.candidates?.[0]?.content?.parts ?? [];
+  return parts
+    .filter((part) => !part.thought && typeof part.text === "string")
+    .map((part) => part.text ?? "")
+    .join("")
+    .trim();
+}
+
+async function generateGeminiJson(
+  apiKey: string,
+  modelName: string,
+  prompt: string,
+  includeThinkingConfig: boolean
+): Promise<string> {
+  const generationConfig: Record<string, unknown> = {
+    responseMimeType: "application/json",
+    maxOutputTokens: 8192,
+  };
+
+  if (includeThinkingConfig) {
+    generationConfig.thinkingConfig = {
+      thinkingBudget: 0,
+      thinkingLevel: "MINIMAL",
+    };
+  }
+
+  const response = await fetch(
+    `${GEMINI_GENERATE_URL}/${encodeURIComponent(modelName)}:generateContent`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-goog-api-key": apiKey,
+      },
+      body: JSON.stringify({
+        contents: [{ role: "user", parts: [{ text: prompt }] }],
+        generationConfig,
+      }),
+    }
+  );
+
+  const data = (await response.json().catch(() => ({}))) as GeminiResponse;
+  const apiMessage = data.error?.message?.trim();
+
+  if (!response.ok) {
+    throw new Error(
+      apiMessage || `Gemini HTTP ${response.status} (${data.error?.status ?? "ERROR"})`
+    );
+  }
+
+  const text = extractResponseText(data);
+  if (text) return text;
+
+  const finishReason = data.candidates?.[0]?.finishReason;
+  if (finishReason && finishReason !== "STOP") {
+    throw new Error(`AI 응답이 비어 있어요. (finishReason: ${finishReason})`);
+  }
+
+  throw new Error("AI 응답이 비어 있어요.");
+}
+
 export function formatGeminiAnalyzeError(error: unknown): string {
-  const message = error instanceof Error ? error.message : String(error);
+  const message = extractGeminiErrorMessage(error);
 
   if (message.includes("GEMINI_API_KEY missing")) {
     return "Gemini API 키가 설정되지 않았습니다. .env 파일에 GEMINI_API_KEY를 추가해주세요.";
@@ -78,8 +172,22 @@ export function formatGeminiAnalyzeError(error: unknown): string {
   ) {
     return "AI가 만든 답을 읽는 중 문제가 났어요. 같은 파일로 다시 시도해 주세요.";
   }
+  if (
+    message.includes("비어") ||
+    message.includes("돌려주지") ||
+    message.includes("차단") ||
+    message.includes("MAX_TOKENS") ||
+    message.includes("SAFETY")
+  ) {
+    return "AI가 요약 결과를 제대로 만들지 못했어요. 같은 파일로 다시 시도해 주세요.";
+  }
   if (message.includes("fetch failed") || message.includes("ECONNREFUSED")) {
     return "Gemini 서버에 연결하지 못했어요. 인터넷 연결과 서버 방화벽을 확인해 주세요.";
+  }
+
+  if (message) {
+    const shortReason = message.replace(/\s+/g, " ").slice(0, 160);
+    return `회의록을 분석하고 요약하는 중 문제가 발생했습니다. (${shortReason})`;
   }
 
   return "회의록을 분석하고 요약하는 중 문제가 발생했습니다.";
@@ -97,8 +205,9 @@ export async function analyzeMeetingContent(params: {
   detailsPrompt?: string | null;
 }): Promise<AnalyzeMeetingResult> {
   const { text, memos, summaryPrompt, detailsPrompt } = params;
+  const apiKey = process.env.GEMINI_API_KEY?.trim() || "";
 
-  if (!process.env.GEMINI_API_KEY) {
+  if (!apiKey) {
     throw new Error("GEMINI_API_KEY missing");
   }
 
@@ -158,42 +267,30 @@ ${text}
 사용자 작성 메모:
 ${memos ? memos : "작성된 메모가 없습니다."}`;
 
-  const request = {
-    contents: [{ role: "user" as const, parts: [{ text: prompt }] }],
-    generationConfig: {
-      responseMimeType: "application/json",
-    },
-  };
-
   let lastError: unknown = null;
 
   for (const modelName of getGeminiModelCandidates()) {
-    try {
-      const model = genAI.getGenerativeModel({ model: modelName });
-      const result = await model.generateContent(request);
-
-      let responseText: string;
+    for (const includeThinkingConfig of [true, false]) {
       try {
-        responseText = result.response.text();
-      } catch {
-        throw new Error(
-          "AI가 요약 결과를 돌려주지 않았어요. 내용이 너무 짧거나 차단되었을 수 있어요."
+        const responseText = await generateGeminiJson(
+          apiKey,
+          modelName,
+          prompt,
+          includeThinkingConfig
         );
+        const resultJson = parseModelJson(responseText);
+        return deepStripBasicMarkdown(resultJson) as AnalyzeMeetingResult;
+      } catch (error) {
+        lastError = error;
+        if (includeThinkingConfig && isInvalidThinkingConfigError(error)) {
+          continue;
+        }
+        if (isUnavailableModelError(error)) {
+          console.warn(`Gemini 모델 사용 불가, 다음 후보 시도: ${modelName}`);
+          break;
+        }
+        throw error;
       }
-
-      if (!responseText.trim()) {
-        throw new Error("AI 응답이 비어 있어요.");
-      }
-
-      const resultJson = parseModelJson(responseText);
-      return deepStripBasicMarkdown(resultJson) as AnalyzeMeetingResult;
-    } catch (error) {
-      lastError = error;
-      if (isUnavailableModelError(error)) {
-        console.warn(`Gemini 모델 사용 불가, 다음 후보 시도: ${modelName}`);
-        continue;
-      }
-      throw error;
     }
   }
 
