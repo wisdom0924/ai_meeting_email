@@ -3,6 +3,32 @@ import { deepStripBasicMarkdown } from "@/lib/strip-markdown";
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
 
+/** 2.5 Flash는 신규 API 키에서 404가 나는 경우가 많아, 최신 Flash부터 시도합니다. */
+const DEFAULT_GEMINI_MODELS = [
+  "gemini-3.6-flash",
+  "gemini-3.5-flash",
+  "gemini-flash-latest",
+  "gemini-2.5-flash",
+] as const;
+
+function getGeminiModelCandidates(): string[] {
+  const fromEnv = process.env.GEMINI_MODEL?.trim();
+  const models = fromEnv
+    ? [fromEnv, ...DEFAULT_GEMINI_MODELS.filter((name) => name !== fromEnv)]
+    : [...DEFAULT_GEMINI_MODELS];
+  return [...new Set(models)];
+}
+
+function isUnavailableModelError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return (
+    message.includes("404") ||
+    message.includes("NOT_FOUND") ||
+    message.includes("not found") ||
+    message.includes("no longer available")
+  );
+}
+
 function parseModelJson(responseText: string): unknown {
   const trimmed = responseText.trim();
   try {
@@ -31,6 +57,13 @@ export function formatGeminiAnalyzeError(error: unknown): string {
     message.includes("API key not valid")
   ) {
     return "Gemini API 키가 올바르지 않아요. 서버 .env의 GEMINI_API_KEY를 다시 확인해 주세요.";
+  }
+  if (
+    message.includes("404") ||
+    message.includes("NOT_FOUND") ||
+    message.includes("no longer available")
+  ) {
+    return "지금 쓰는 Gemini 모델에 연결하지 못했어요. 최신 Flash 모델로 다시 시도해 주세요.";
   }
   if (
     message.includes("429") ||
@@ -125,27 +158,46 @@ ${text}
 사용자 작성 메모:
 ${memos ? memos : "작성된 메모가 없습니다."}`;
 
-  const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
-
-  const result = await model.generateContent({
-    contents: [{ role: "user", parts: [{ text: prompt }] }],
+  const request = {
+    contents: [{ role: "user" as const, parts: [{ text: prompt }] }],
     generationConfig: {
       responseMimeType: "application/json",
     },
-  });
+  };
 
-  let responseText: string;
-  try {
-    responseText = result.response.text();
-  } catch {
-    throw new Error("AI가 요약 결과를 돌려주지 않았어요. 내용이 너무 짧거나 차단되었을 수 있어요.");
+  let lastError: unknown = null;
+
+  for (const modelName of getGeminiModelCandidates()) {
+    try {
+      const model = genAI.getGenerativeModel({ model: modelName });
+      const result = await model.generateContent(request);
+
+      let responseText: string;
+      try {
+        responseText = result.response.text();
+      } catch {
+        throw new Error(
+          "AI가 요약 결과를 돌려주지 않았어요. 내용이 너무 짧거나 차단되었을 수 있어요."
+        );
+      }
+
+      if (!responseText.trim()) {
+        throw new Error("AI 응답이 비어 있어요.");
+      }
+
+      const resultJson = parseModelJson(responseText);
+      return deepStripBasicMarkdown(resultJson) as AnalyzeMeetingResult;
+    } catch (error) {
+      lastError = error;
+      if (isUnavailableModelError(error)) {
+        console.warn(`Gemini 모델 사용 불가, 다음 후보 시도: ${modelName}`);
+        continue;
+      }
+      throw error;
+    }
   }
 
-  if (!responseText.trim()) {
-    throw new Error("AI 응답이 비어 있어요.");
-  }
-
-  const resultJson = parseModelJson(responseText);
-
-  return deepStripBasicMarkdown(resultJson) as AnalyzeMeetingResult;
+  throw lastError instanceof Error
+    ? lastError
+    : new Error("사용할 수 있는 Gemini 모델이 없어요.");
 }
